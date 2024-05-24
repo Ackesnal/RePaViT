@@ -42,7 +42,7 @@ The directory structure is the standard layout for the torchvision [`datasets.Im
 ```
 
 ## Training
-### Ordinary training on a single node
+### 1. Ordinary training on a single node
 To train RePaViT on ImageNet on a single node with 4 gpus for 300 epochs run:
 
 RePaViT-small
@@ -56,7 +56,7 @@ python -m torch.distributed.launch --nproc_per_node=4 --master_port=12345 --use_
 ```
 Please note that `--channel_idle` argument must be used with `--feature_norm=BatchNorm`.
 
-### Ordinary training with wandb
+### 2. Track your training with wandb
 To train with wandb visualization:
 ```
 WANDB_MODE=online python -m torch.distributed.launch --nproc_per_node=4 --master_port=12345 --use_env main.py --data-path /path/to/imagenet --output_dir=output/repavit_small --model RePaViT_small_patch16_224_layer12 --feature_norm=BatchNorm --channel_idle --use_wandb
@@ -64,9 +64,35 @@ WANDB_MODE=online python -m torch.distributed.launch --nproc_per_node=4 --master
 Please note that `WANDB_MODE` MUST be set when using `--use_wandb`. You can choose `WANDB_MODE=online` for real-time tracking on the wandb dashboard, or `WANDB_MODE=offline` for local tracking and synchronize later. 
 
 
-### Multinode training
+### 3. Multinode training
 
 Distributed training is available via Slurm. We provide Slurm script at [exec_config.sh](https://github.com/Ackesnal/RePaViT/exec_config.sh). At the moment, only multi-node single-GPU training or single-node multi-GPU training is supported. <span style="color:red">Multi-node multi-GPU training has not been supported yet.</span>
+
+A sample code snippet of exec_config.sh is as shown below:
+```sh
+#!/bin/bash
+#SBATCH --nodes=8
+#SBATCH --ntasks-per-node=1
+#SBATCH --job-name=train
+#SBATCH --partition=gpu
+#SBATCH --cpus-per-task=20
+#SBATCH --gres=gpu:1
+#SBATCH --mem-per-cpu=2G
+#SBATCH -o out.txt
+#SBATCH -e err.txt
+
+export WORLD_SIZE=$(($SLURM_NNODES * $SLURM_NTASKS_PER_NODE))
+export MASTER_PORT=12345
+export MASTER_ADDR=$(scontrol show hostname $SLURM_NODELIST | head -n 1)
+export BATCH_SIZE=$(echo "scale=0; 2048 / $WORLD_SIZE" | bc)
+
+srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env \
+main.py --data-path /path/to/imagenet --output_dir=output/RePaViT_small --batch-size=$BATCH_SIZE --model=RePaViT_small_patch16_224_layer12 \
+--feature_norm=BatchNorm --channel_idle
+```
+where `--nodes` and `--ntasks_per_node` cannot be set to both greater than 1 at the moment!! One of them must be set to 1.
+
+`--gres` determines how many GPUs per node you want to use, which should equal to `--ntasks_per_node` in most cases.
 
 ## License
 This repository is released under the Apache 2.0 license as found in the [LICENSE](LICENSE) file.
