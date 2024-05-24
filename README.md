@@ -18,7 +18,7 @@ pip install timm==1.0.3 einops ptflops
 ```
 After the above installations, it is ready to run this repo. 
 
-(OPTIONAL) We further utilize the [wandb](https://wandb.ai/site) for real-time track and training process visualization. However, you will need to register and login to wandb first.
+We further utilize the [wandb](https://wandb.ai/site) for real-time track and training process visualization. The use of wandb is optional. However, you will need to register and login to wandb before using this functionality.
 ```
 pip install wandb
 ```
