@@ -1,82 +1,35 @@
 # Copyright (c) 2015-present, Facebook, Inc.
 # All rights reserved.
+import os
+import time
+import yaml
+import json
+import utils
+import wandb
+import random
 import argparse
 import datetime
 import numpy as np
-import time
+from pathlib import Path
+
 import torch
 import torch.backends.cudnn as cudnn
-import json
-
-from pathlib import Path
+import torch.autograd.profiler as profiler
 
 from timm.data import Mixup
 from timm.models import create_model
-from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
-from timm.scheduler import create_scheduler, create_scheduler_v2, scheduler_kwargs
 from timm.optim import create_optimizer
 from timm.utils import NativeScaler, get_state_dict, ModelEma
+from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
+from timm.scheduler import create_scheduler, create_scheduler_v2, scheduler_kwargs
 
-from datasets import build_dataset
-from engine import train_one_epoch, evaluate
-from losses import DistillationLoss
 from samplers import RASampler
+from datasets import build_dataset
+from losses import DistillationLoss
 from augment import new_data_aug_generator
-import torch.autograd.profiler as profiler
+from engine import train_one_epoch, evaluate
 
-import models
-import models_v2
-import models_v3
-
-import utils
-import os
-import random
-from ptflops import get_model_complexity_info
-
-import wandb
-
-
-def get_macs(model, x=None):
-    macs, params = get_model_complexity_info(model, (3, 224, 224), print_per_layer_stat=False, as_strings=False)
-    if next(model.parameters()).get_device()==0:
-        print('{:<} {:<}{:<}'.format('Computational complexity: ', round(macs*1e-9, 2), 'GMACs'))
-        print('{:<} {:<}{:<}'.format('Number of parameters: ', round(params*1e-6, 2), 'M'))
-        print()
-
-
-
-def speed_test(model, ntest=100, batchsize=128, x=None, **kwargs):
-    if x is None:
-        x = torch.rand(batchsize, 3, 224, 224).cuda()
-    else:
-        batchsize = x.shape[0]
-    model.eval()
-
-    start = time.time()
-    with torch.no_grad():
-        for i in range(ntest):
-            model(x, **kwargs)
-    torch.cuda.synchronize()
-    end = time.time()
-
-    elapse = end - start
-    speed = batchsize * ntest / elapse
-
-    return speed
-    
-
-
-def signal_test(model):
-    x = torch.rand(1, 3, 224, 224).cuda()
-    model.eval()
-    #model(x, signal_test=True)
-    
-    model = model.to("cpu")
-    x = x.to("cpu")
-    with profiler.profile(record_shapes=True, use_cuda=False, with_modules=True) as prof:
-        model(x)
-    print(prof.key_averages().table(sort_by="cpu_time_total"))
-
+import repavit
 
 
 def get_args_parser():
@@ -259,9 +212,37 @@ def get_args_parser():
 
 
 
+def get_macs(model, x=None):
+    macs, params = get_model_complexity_info(model, (3, 224, 224), print_per_layer_stat=False, as_strings=False)
+    if next(model.parameters()).get_device()==0:
+        print('{:<} {:<}{:<}'.format('Computational complexity: ', round(macs*1e-9, 2), 'GMACs'))
+        print('{:<} {:<}{:<}'.format('Number of parameters: ', round(params*1e-6, 2), 'M'))
+        print()
+
+
+
+def speed_test(model, ntest=100, batchsize=128, x=None, **kwargs):
+    if x is None:
+        x = torch.rand(batchsize, 3, 224, 224).cuda()
+    else:
+        batchsize = x.shape[0]
+    model.eval()
+
+    start = time.time()
+    with torch.no_grad():
+        for i in range(ntest):
+            model(x, **kwargs)
+    torch.cuda.synchronize()
+    end = time.time()
+
+    elapse = end - start
+    speed = batchsize * ntest / elapse
+
+    return speed
+
+
+
 def main(args):
-    if 'SLURM_PROCID' in os.environ and int(os.environ['SLURM_NNODES']) > 1:
-        os.environ['WORLD_SIZE'] = str(int(os.environ['SLURM_NNODES']) * int(os.environ['SLURM_NTASKS_PER_NODE']))
     
     utils.init_distributed_mode(args)
 

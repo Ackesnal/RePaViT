@@ -1,40 +1,35 @@
 # Copyright (c) 2015-present, Facebook, Inc.
 # All rights reserved.
+import os
+import time
+import yaml
+import json
+import utils
+import wandb
+import random
 import argparse
 import datetime
 import numpy as np
-import time
+from pathlib import Path
+
 import torch
 import torch.backends.cudnn as cudnn
-import json
-
-from pathlib import Path
+import torch.autograd.profiler as profiler
 
 from timm.data import Mixup
 from timm.models import create_model
-from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
-from timm.scheduler import create_scheduler, create_scheduler_v2, scheduler_kwargs
 from timm.optim import create_optimizer
 from timm.utils import NativeScaler, get_state_dict, ModelEma
+from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
+from timm.scheduler import create_scheduler, create_scheduler_v2, scheduler_kwargs
 
-from datasets import build_dataset
-from engine import train_one_epoch, evaluate
-from losses import DistillationLoss
 from samplers import RASampler
+from datasets import build_dataset
+from losses import DistillationLoss
 from augment import new_data_aug_generator
-import torch.autograd.profiler as profiler
+from engine import train_one_epoch, evaluate
 
-import models_v3
-
-import utils
-import os
-import random
-
-import wandb
-
-
-# Glogal variable
-args = None
+import repavit
 
 
 def get_args_parser():
@@ -193,7 +188,7 @@ def get_args_parser():
     
     parser.add_argument('--use_wandb', default=False, action='store_true')
     parser.add_argument('--wandb_no_loss', default=False, action='store_true')
-    parser.add_argument('--wandb_suffix', default="", type=str)
+    parser.add_argument('--wandb_suffix', default="sweep", type=str)
     parser.add_argument('--wandb_sweep_count', default=1, type=int,)
     
     # NFViT Ablation Augments
@@ -543,6 +538,10 @@ def main(config=None):
     # Clean up
     if args.rank == 0:
         wandb.finish()
+
+
+# Glogal variable
+args = None
         
                                     
 if __name__ == '__main__':
@@ -555,45 +554,33 @@ if __name__ == '__main__':
         args.rank = int(os.environ['SLURM_PROCID'])
         args.gpu = args.rank % torch.cuda.device_count()
         args.world_size = int(os.environ['SLURM_NNODES']) * int(os.environ['SLURM_NTASKS_PER_NODE'])
+        args.distributed = True
     elif 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
         args.rank = int(os.environ["RANK"])
         args.world_size = int(os.environ['WORLD_SIZE'])
         args.gpu = int(os.environ['LOCAL_RANK'])
+        args.distributed = True
     else:
         print('Not using distributed mode')
         args.distributed = False
-        
-    # Define the search space
-    sweep_configuration = {
-        "method": "bayes",
-        "metric": {"goal": "maximize", "name": "accuracy"},
-        "parameters": {
-            "model": {"value":args.model, "distribution": "constant"},
-            "layer": {"value": "FFN" if args.channel_idle and not args.po_shortcut else "MHSA" if not args.channel_idle and args.po_shortcut else "Both" if args.channel_idle and args.po_shortcut else "None", "distribution": "constant"},
-            "norm": {"value": args.feature_norm, "distribution": "constant"},
-            "batch_size": {"values": [1024, 2048, 3072, 4096]},
-            'opt': {'values': ["nadamw", "adamw", "lamb"]},
-            'lr': {'min': 1e-4, 'max': 5e-3, 'distribution': 'uniform'},
-            'min_lr': {'min': 5e-7, 'max': 1e-4, 'distribution': 'uniform'},
-            'warmup_epochs': {'min': 5, 'max': 20, 'distribution': 'q_uniform', 'q': 5},
-            'weight_decay': {'min': -6.90775, 'max': -2.30258, 'distribution': 'log_uniform'},
-            'drop_path': {'min': 1e-2, 'max': 1e-1, 'distribution': 'uniform'},
-            'shortcut_gain': {'min': -2.30258, 'max': 0.13976, 'distribution': 'q_log_uniform', 'q': 0.1}
-        },
-        "early_terminate": {
-            "type": "hyperband",
-            "min_iter": 100,
-            "max_iter": 200,
-            "eta": 3,
-        }
-    }
     
-    if args.rank == 0:
-        project_name = args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_" + args.wandb_suffix
-        sweep_id = wandb.sweep(sweep_configuration, project=project_name)
-        wandb.agent(sweep_id, function=main, count=args.wandb_sweep_count, project=project_name, entity="ackesnal-ai")
+    if args.distributed:
+        if args.rank == 0:
+            with open('sweep_config.yaml', 'r') as file:
+                config = yaml.safe_load(file)
+        
+            # Define the search space
+            config["parameters"]["model"] = {"value":args.model, "distribution": "constant"}
+            config["parameters"]["layer"] = {"value": "FFN" if args.channel_idle and not args.po_shortcut else "MHSA" if not args.channel_idle and args.po_shortcut else "Both" if args.channel_idle and args.po_shortcut else "None", "distribution": "constant"}
+            config["parameters"]["norm"] = {"value": args.feature_norm, "distribution": "constant"}
+            
+            project_name = args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_" + args.wandb_suffix
+            sweep_id = wandb.sweep(config, project=project_name)
+            wandb.agent(sweep_id, function=main, count=args.wandb_sweep_count, project=project_name)
+        else:
+            cnt = 0
+            while cnt < args.wandb_sweep_count:
+                main(config=None)
+                cnt += 1
     else:
-        cnt = 0
-        while cnt < args.wandb_sweep_count:
-            main(config=None)
-            cnt += 1
+        assert False, "Only distributed learning is supported for W&B Sweep optimization."
