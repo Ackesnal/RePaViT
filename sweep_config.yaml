@@ -29,10 +29,12 @@ parameters:
     max: 0.1
     distribution: uniform
   shortcut_gain:
-    min: -2.30258
-    max: 0.13976
-    distribution: q_log_uniform
-    q: 0.1
+    value: 1.0
+    distribution: constant
+#    min: -2.30258
+#    max: 0.13976
+#    distribution: q_log_uniform
+#    q: 0.1
 early_terminate:
   type: hyperband
   min_iter: 100

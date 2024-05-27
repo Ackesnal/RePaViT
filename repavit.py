@@ -27,7 +27,9 @@ class Mlp(nn.Module):
             act_layer=nn.GELU,
             feature_norm="LayerNorm",
             shortcut_gain=0.0,
-            std=1.0):
+            std=1.0,
+            layer_scale=False,
+            init_values=1e-5):
             
         super().__init__()
         
@@ -46,6 +48,7 @@ class Mlp(nn.Module):
         ######################## ↑↑↑↑↑↑ ########################
         
         ######################## ↓↓↓↓↓↓ ########################
+        # Channel-idle and shortcut gain
         self.channel_idle = channel_idle
         if self.channel_idle:
             self.gain = nn.Parameter(torch.ones((1))*shortcut_gain, 
@@ -69,12 +72,19 @@ class Mlp(nn.Module):
         self.drop_path = DropPath(drop_path) if drop_path > 0. else None
         ######################## ↑↑↑↑↑↑ ########################
             
+        ######################## ↓↓↓↓↓↓ ########################
+        # Layer Scale
+        self.layer_scale = layer_scale
+        if self.layer_scale:
+            self.ls = nn.Parameter(torch.ones((self.dim_out)) * init_values)
+        ######################## ↑↑↑↑↑↑ ########################
+        
     def forward(self, x):
         B, N, C = x.shape
         ######################## ↓↓↓ 2-layer MLP ↓↓↓ ########################
         shortcut = x # B, N, C
         
-        # Feature normalization
+        # 1st Feature normalization
         if self.feature_norm == "LayerNorm":
             x = self.norm(x)
         elif self.feature_norm == "BatchNorm":
@@ -87,7 +97,6 @@ class Mlp(nn.Module):
         # FFN in
         x = self.ffn1(x) # B, N, 4C
         
-        
         # Activation
         if self.channel_idle:
             mask = torch.zeros_like(x, dtype=torch.bool)
@@ -96,6 +105,7 @@ class Mlp(nn.Module):
         else:
             x = self.act(x)
         
+        # 2nd Feature normalization
         if self.feature_norm == "BatchNorm":
             x = self.norm2(x.transpose(-1,-2)).transpose(-1, -2)
         elif self.feature_norm == "EmpiricalSTD":
@@ -106,9 +116,15 @@ class Mlp(nn.Module):
         # FFN out
         x = self.ffn2(x)
         
+        # Add shortcut gain (1)
         if self.channel_idle:
             x = x * self.gain
         
+        # Add Layer Scale (dim)
+        if self.layer_scale:
+            x = x * self.ls
+        
+        # Add DropPath
         x = self.drop_path(x) if self.drop_path is not None else x
         
         x = x + shortcut
@@ -135,7 +151,9 @@ class Attention(nn.Module):
                  feature_norm="LayerNorm",
                  po_shortcut=False,
                  shortcut_gain=1.0,
-                 std=1.0):
+                 std=1.0,
+                 layer_scale=False,
+                 init_values=1e-5):
                  
         super().__init__()
         
@@ -198,6 +216,13 @@ class Attention(nn.Module):
                 self.std = nn.Parameter(torch.ones((1))*std)
         ######################## ↑↑↑↑↑↑ ########################
         
+        ######################## ↓↓↓↓↓↓ ########################
+        # Layer Scale
+        self.layer_scale = layer_scale
+        if self.layer_scale:
+            self.ls = nn.Parameter(torch.ones((dim)) * init_values)
+        ######################## ↑↑↑↑↑↑ ########################
+            
     def forward(self, x):
         B, N, C = x.shape
         
@@ -228,7 +253,11 @@ class Attention(nn.Module):
                 
             # Output linear projection
             x = self.proj(x)
-                
+            
+            # Add layer scale
+            if self.layer_scale:
+                x = x * self.ls
+            
             # Add DropPath
             x = self.drop_path(x) if self.drop_path is not None else x
             
@@ -384,9 +413,12 @@ class NFAttentionBlock(nn.Module):
     # taken from https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/vision_transformer.py
     def __init__(self, dim, num_head, mlp_ratio=4., bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., act_layer=nn.GELU, channel_idle=False, po_shortcut=False, 
-                 feature_norm="LayerNorm", shortcut_gain=1.0, std=1.0): 
+                 feature_norm="LayerNorm", shortcut_gain=1.0, std=1.0, layer_scale=False, init_values=1e-5): 
         super().__init__()
         
+        if layer_scale:
+            assert shortcut_gain == 1.0, "Shortcut gain must be set to 1.0 when using LayerScale"
+            
         dim_hidden = int(dim * mlp_ratio)
         self.rep = False
         self.dim = dim
@@ -395,18 +427,22 @@ class NFAttentionBlock(nn.Module):
         if po_shortcut:
             self.attn = Attention(dim=dim, num_head=num_head, bias=bias, qk_scale=qk_scale, 
                                   attn_drop=attn_drop, drop_path=drop_path, feature_norm=feature_norm,
-                                  po_shortcut=po_shortcut, shortcut_gain=shortcut_gain, std=std)
+                                  po_shortcut=po_shortcut, shortcut_gain=shortcut_gain, std=std, 
+                                  layer_scale=layer_scale, init_values=init_values)
         else:
             self.attn = Attention(dim, num_head=num_head, bias=bias, qk_scale=qk_scale, 
-                                  attn_drop=attn_drop, drop_path=drop_path)
+                                  attn_drop=attn_drop, drop_path=drop_path, 
+                                  layer_scale=layer_scale, init_values=init_values)
         
         if channel_idle:
             self.mlp = Mlp(dim_in=dim, dim_hidden=dim_hidden, bias=bias, act_layer=act_layer, 
                            drop_path=drop_path, feature_norm=feature_norm, std=std, 
-                           channel_idle=channel_idle, shortcut_gain=shortcut_gain)
+                           channel_idle=channel_idle, shortcut_gain=shortcut_gain, 
+                           layer_scale=layer_scale, init_values=init_values)
         else:
             self.mlp = Mlp(dim_in=dim, dim_hidden=dim_hidden, bias=bias, 
-                           act_layer=act_layer, drop_path=drop_path)
+                           act_layer=act_layer, drop_path=drop_path, 
+                           layer_scale=layer_scale, init_values=init_values)
     
     def forward(self, x):
         x = self.attn(x)
@@ -453,6 +489,7 @@ class NFTransformer(VisionTransformer):
             num_heads=12,
             mlp_ratio=2.,
             qkv_bias=True,
+            layer_scale=False,
             init_values=None,
             class_token=True,
             no_embed_class=False,
@@ -469,7 +506,7 @@ class NFTransformer(VisionTransformer):
             feature_norm='LayerNorm',
             channel_idle=False,
             po_shortcut=False,
-            shortcut_gain=0.0,):
+            shortcut_gain=0.0):
         
         super().__init__(
             img_size=img_size,
@@ -508,6 +545,8 @@ class NFTransformer(VisionTransformer):
                 feature_norm=feature_norm,
                 shortcut_gain=shortcut_gain,
                 std=std[i],
+                init_values=init_values,
+                layer_scale=layer_scale
             )
             for i in range(depth)])
         
