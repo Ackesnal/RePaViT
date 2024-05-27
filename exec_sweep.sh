@@ -15,6 +15,7 @@ export MASTER_ADDR=$(scontrol show hostname $SLURM_NODELIST | head -n 1)
 
 WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env train_wandb_sweep.py --data-path /scratch/itee/uqxxu16/data/imagenet --model RePaViT_small_patch16_224_layer12 --output_dir=output/sweep_optimization --feature_norm=BatchNorm --epochs=200 --channel_idle --use_wandb --wandb_no_loss --wandb_suffix=sweep --wandb_sweep_count=20
 
+# WANDB_MODE=[online, offline, disabled] -> 用于设定是否要联网同步
 # --use_wandb -> 使用wandb的功能，必须要加
 # --wandb_no_loss -> 不记录训练时候的loss，如果不加的话会记录每个iteration的loss
 # --wandb_suffix -> 默认是在project name后面加“_sweep” ，也可以改成其他后缀
