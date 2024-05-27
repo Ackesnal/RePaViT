@@ -4,7 +4,7 @@ metric:
   name: accuracy
 parameters:
   batch_size:
-    values: [512, 1024, 1536, 2048]
+    values: [1024, 2048, 3072, 4096]
   opt:
     values: ["nadamw", "adamw", "lamb"]
   lr:
