@@ -241,7 +241,7 @@ def main(config=None):
         args.drop_path = config["drop_path"]
         args.batch_size = config["batch_size"] // args.world_size
         args.unscale_lr = True
-    print(args.batch_size, "\n\n\n\n")
+        
     print(args)
 
     if args.distillation_type != 'none' and args.finetune and not args.eval:
