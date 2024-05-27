@@ -4,7 +4,7 @@ metric:
   name: accuracy
 parameters:
   batch_size:
-    values: [1024, 2048, 3072, 4096]
+    values: [1024, 2048]
   opt:
     values: ["nadamw", "adamw", "lamb"]
   lr:
@@ -13,7 +13,7 @@ parameters:
     distribution: uniform
   min_lr:
     min: 5e-7
-    max: 1e-4
+    max: 5e-5
     distribution: uniform
   warmup_epochs:
     min: 5
@@ -40,3 +40,5 @@ early_terminate:
   min_iter: 100
   max_iter: 200
   eta: 3
+  s: 4
+  

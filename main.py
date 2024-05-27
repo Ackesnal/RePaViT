@@ -28,6 +28,7 @@ from datasets import build_dataset
 from losses import DistillationLoss
 from augment import new_data_aug_generator
 from engine import train_one_epoch, evaluate
+from ptflops import get_model_complexity_info
 
 import repavit
 

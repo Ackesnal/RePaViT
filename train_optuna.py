@@ -31,6 +31,9 @@ from engine import train_one_epoch, evaluate
 
 import repavit
 
+import optuna
+from optuna.samplers import TPESampler
+
 
 def get_args_parser():
     parser = argparse.ArgumentParser('RePaViT training and evaluation script', add_help=False)
@@ -188,9 +191,8 @@ def get_args_parser():
     
     parser.add_argument('--use_wandb', default=False, action='store_true')
     parser.add_argument('--wandb_no_loss', default=False, action='store_true')
-    parser.add_argument('--wandb_suffix', default="sweep", type=str)
-    parser.add_argument('--wandb_sweep_count', default=1, type=int,)
-    parser.add_argument('--wandb_sweep_id', default=None, type=str)
+    parser.add_argument('--wandb_suffix', default="optuna", type=str)
+    parser.add_argument('--optuna_ntrials', default=1, type=int)
     
     # NFViT Ablation Augments
     parser.add_argument('--shortcut_type', default='PerLayer', type=str, choices=['PerLayer', 'PerOperation'])
@@ -212,24 +214,57 @@ def get_args_parser():
     return parser
 
 
-def main(config=None):
+def objective(trial):
     if not torch.distributed.is_initialized():
         utils.init_distributed_mode(args)
     
     if args.rank == 0:
-        wandb.init(config=config, mode=os.environ['WANDB_MODE'])
-        config = dict(wandb.config)
-        
-        args.opt = config["opt"]
-        args.lr = config["lr"]
-        args.min_lr = config["min_lr"]
-        args.warmup_epochs = config["warmup_epochs"]
-        args.weight_decay = config["weight_decay"]
-        args.shortcut_gain = config["shortcut_gain"]
-        args.drop_path = config["drop_path"]
-        args.batch_size = config["batch_size"] // args.world_size
+        args.batch_size = trial.suggest_categorical('batch_size', [1024, 2048]) // args.world_size
+        args.opt = trial.suggest_categorical('opt', ["nadamw", "adamw", "lamb"])
+        args.lr = trial.suggest_uniform('lr', 1e-4, 5e-3)
+        args.min_lr = trial.suggest_uniform('min_lr', 5e-7, 5e-5)
+        args.warmup_epochs = trial.suggest_int('warmup_epochs', 5, 20, step=5)
+        args.weight_decay = trial.suggest_loguniform('weight_decay', 1e-4, 1e-1)
+        args.drop_path = trial.suggest_uniform('drop_path', 0.01, 0.1)
+        args.shortcut_gain = 1.0
+        config = {"opt": args.opt,
+                  "batch_size": args.batch_size,
+                  "lr": args.lr,
+                  "min_lr": args.min_lr,
+                  "warmup_epochs": args.warmup_epochs,
+                  "weight_decay": args.weight_decay,
+                  "drop_path": args.drop_path,
+                  "shortcut_gain": args.shortcut_gain}
         args.unscale_lr = True
         torch.distributed.broadcast_object_list([config], src=0)
+        
+        name = args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_"
+        if args.channel_idle:
+            name = name + "ChannelIdle" + "_"
+        if args.po_shortcut:
+            name = name + "POShortcut" + "_"
+        name = name + "Gain" + str(args.shortcut_gain) + "_"
+        name = name + str(random.randint(0, 100000000))
+        wandb.init(
+            # set the wandb project where this run will be logged
+            project=args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_" + args.wandb_suffix,
+            name=name,
+            # track hyperparameters and run metadata
+            config={
+            "model": args.model,
+            "layer": "FFN" if args.channel_idle and not args.po_shortcut else "MHSA" if not args.channel_idle and args.po_shortcut else "Both" if args.channel_idle and args.po_shortcut else "None",
+            "shortcut_gain": args.shortcut_gain,
+            "norm_type": args.feature_norm,
+            "lr": args.lr,
+            "min-lr": args.min_lr,
+            "warmup-lr": args.warmup_lr,
+            "warmup-epoch": args.warmup_epochs,
+            "opt": args.opt,
+            "weight-decay": args.weight_decay,
+            "epochs": args.epochs,
+            }, 
+            mode=os.environ['WANDB_MODE']
+        )
     else:
         config = [None]
         torch.distributed.broadcast_object_list(config, src=0)
@@ -242,7 +277,7 @@ def main(config=None):
         args.weight_decay = config["weight_decay"]
         args.shortcut_gain = config["shortcut_gain"]
         args.drop_path = config["drop_path"]
-        args.batch_size = config["batch_size"] // args.world_size
+        args.batch_size = config["batch_size"]
         args.unscale_lr = True
         
     print(args)
@@ -484,6 +519,22 @@ def main(config=None):
         
         if args.rank == 0:
             wandb.log({"accuracy": test_stats["acc1"]})
+            # For early stop
+            trial.report(test_stats["acc1"], epoch)
+            if trial.should_prune():
+                for i in range(1, args.world_size):
+                    # Send a tensor to notify exit
+                    torch.distributed.send(tensor=torch.tensor([1], device=device), dst=i)
+                raise optuna.TrialPruned()
+            else:
+                for i in range(1, args.world_size):
+                    # Send a tensor to notify exit
+                    torch.distributed.send(tensor=torch.tensor([0], device=device), dst=i)
+        else:
+            exit_signal = torch.tensor([0], device=device)
+            torch.distributed.recv(tensor=exit_signal, src=0)
+            if exit_signal.item() == 1:
+                break
         
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -492,6 +543,8 @@ def main(config=None):
     # Clean up
     if args.rank == 0:
         wandb.finish()
+    
+    return max_accuracy
 
 
 # Glogal variable
@@ -520,24 +573,12 @@ if __name__ == '__main__':
     
     if args.distributed:
         if args.rank == 0:
-            with open('sweep_config.yaml', 'r') as file:
-                config = yaml.safe_load(file)
-        
-            # Define the search space
-            config["parameters"]["model"] = {"value":args.model, "distribution": "constant"}
-            config["parameters"]["layer"] = {"value": "FFN" if args.channel_idle and not args.po_shortcut else "MHSA" if not args.channel_idle and args.po_shortcut else "Both" if args.channel_idle and args.po_shortcut else "None", "distribution": "constant"}
-            config["parameters"]["norm"] = {"value": args.feature_norm, "distribution": "constant"}
-            
-            project_name = args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_" + args.wandb_suffix
-            if args.wandb_sweep_id is not None:
-                sweep_id = args.wandb_sweep_id
-            else:
-                sweep_id = wandb.sweep(config, project=project_name)
-            wandb.agent(sweep_id, function=main, count=args.wandb_sweep_count, project=project_name)
+            study = optuna.create_study(direction='maximize', sampler=TPESampler(), pruner=optuna.pruners.HyperbandPruner())
+            study.optimize(objective, n_trials=args.optuna_ntrials)
         else:
             cnt = 0
-            while cnt < args.wandb_sweep_count:
-                main(config=None)
+            while cnt < args.optuna_ntrials:
+                objective(None)
                 cnt += 1
     else:
-        assert False, "Only distributed learning is supported for W&B Sweep optimization."
+        assert False, "Only distributed learning is supported for Optuna optimization."
