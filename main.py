@@ -208,6 +208,9 @@ def get_args_parser():
     parser.add_argument('--finetune_std', type=int, default=300)
     parser.add_argument('--activation', default='GELU', type=str, choices=['ReLU', 'GELU', 'Sigmoid', 'LeakyReLU', 'SiLU'])
     parser.add_argument('--reparam', default=False, action='store_true')
+    
+    parser.add_argument('--init_values', type=float, default=1e-5)
+    parser.add_argument('--layer_scale', default=False, action='store_true')
     return parser
 
 
@@ -337,7 +340,9 @@ def main(args):
         po_shortcut=args.po_shortcut,
         feature_norm=args.feature_norm,
         shortcut_gain=args.shortcut_gain,
-        act_layer=act_layer
+        act_layer=act_layer,
+        layer_scale=args.layer_scale,
+        init_values=args.init_values
     )
     
     if args.finetune:
