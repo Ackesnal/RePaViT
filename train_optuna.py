@@ -221,12 +221,12 @@ def objective(trial):
     if args.rank == 0:
         args.batch_size = trial.suggest_categorical('batch_size', [1024, 2048]) // args.world_size
         args.opt = trial.suggest_categorical('opt', ["nadamw", "adamw", "lamb"])
-        args.lr = trial.suggest_uniform('lr', 1e-4, 5e-3)
-        args.min_lr = trial.suggest_uniform('min_lr', 5e-7, 5e-5)
+        args.lr = trial.suggest_float('lr', 1e-4, 5e-3)
+        args.min_lr = trial.suggest_float('min_lr', 5e-7, 5e-5)
         args.warmup_epochs = trial.suggest_int('warmup_epochs', 5, 20, step=5)
-        args.weight_decay = trial.suggest_loguniform('weight_decay', 1e-4, 1e-1)
-        args.drop_path = trial.suggest_uniform('drop_path', 0.01, 0.1)
-        args.shortcut_gain = 1.0
+        args.weight_decay = trial.suggest_float('weight_decay', 1e-3, 1e-1)
+        args.drop_path = trial.suggest_float('drop_path', 0.01, 0.1)
+        args.shortcut_gain = trial.suggest_float('shortcut_gain', 0.0, 1.0, step=0.2)
         config = {"opt": args.opt,
                   "batch_size": args.batch_size,
                   "lr": args.lr,
