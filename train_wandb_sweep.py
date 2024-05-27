@@ -190,6 +190,7 @@ def get_args_parser():
     parser.add_argument('--wandb_no_loss', default=False, action='store_true')
     parser.add_argument('--wandb_suffix', default="sweep", type=str)
     parser.add_argument('--wandb_sweep_count', default=1, type=int,)
+    parser.add_argument('--wandb_sweep_id', default=None, type=str)
     
     # NFViT Ablation Augments
     parser.add_argument('--shortcut_type', default='PerLayer', type=str, choices=['PerLayer', 'PerOperation'])
@@ -420,116 +421,64 @@ def main(config=None):
     start_time = time.time()
     max_accuracy = 0.0
     
-    use_amp=True
+    nan_loss_flag = False
     for epoch in range(args.start_epoch, args.epochs):
-        while True:
-            if args.feature_norm == "EmpiricalSTD" and epoch == args.finetune_std:
-                for name, param in model.module.named_parameters():
-                    if "std" in name:
-                        param.requires_grad_(True)
-                            
-                model_without_ddp = model.module
-                optimizer = create_optimizer(args, model_without_ddp)
-                loss_scaler = utils.NativeScalerWithGradNormCount()
-                                
-                lr_scheduler, num_epochs = create_scheduler_v2(
-                            optimizer,
-                            **scheduler_kwargs(args),
-                            updates_per_epoch=args.updates_per_epoch,
-                )
-                lr_scheduler.step(epoch*len(data_loader_train) // args.accumulation_steps)
-            if (args.po_shortcut or args.channel_idle) and epoch == args.finetune_gain:
-                for name, param in model.module.named_parameters():
-                    if "gain" in name:
-                        param.requires_grad_(True)
-                            
-                model_without_ddp = model.module
-                optimizer = create_optimizer(args, model_without_ddp)
-                loss_scaler = utils.NativeScalerWithGradNormCount()
-                                
-                lr_scheduler, num_epochs = create_scheduler_v2(
-                            optimizer,
-                            **scheduler_kwargs(args),
-                            updates_per_epoch=args.updates_per_epoch,
-                )
-                lr_scheduler.step(epoch*len(data_loader_train) // args.accumulation_steps)
-                    
+        if args.feature_norm == "EmpiricalSTD" and epoch == args.finetune_std:
+            for name, param in model.module.named_parameters():
+                if "std" in name:
+                    param.requires_grad_(True)
                         
-            if args.distributed:
-                data_loader_train.sampler.set_epoch(epoch)
-            
-            train_stats, nan_loss_flag = train_one_epoch(
-                model, criterion, data_loader_train,
-                optimizer, device, epoch, loss_scaler,
-                args.clip_grad, model_ema, mixup_fn,
-                set_training_mode=args.train_mode,  # keep in eval mode for deit finetuning / train mode for training and deit III finetuning
-                lr_scheduler = lr_scheduler,
-                use_amp = use_amp,
-                args = args,
+            model_without_ddp = model.module
+            optimizer = create_optimizer(args, model_without_ddp)
+            loss_scaler = utils.NativeScalerWithGradNormCount()
+                            
+            lr_scheduler, num_epochs = create_scheduler_v2(
+                        optimizer,
+                        **scheduler_kwargs(args),
+                        updates_per_epoch=args.updates_per_epoch,
             )
+            lr_scheduler.step(epoch*len(data_loader_train) // args.accumulation_steps)
             
-            if nan_loss_flag:
-                print("Reload the last epoch's checkpoint.")
-                checkpoint_path = output_dir/'checkpoint.pth'
-                checkpoint = torch.load(checkpoint_path, map_location='cpu')
-                model_without_ddp.load_state_dict(checkpoint['model'])
-                
-                if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
-                    args.start_epoch = checkpoint['epoch']
-                    model_without_ddp = model.module
-                                    
-                    optimizer = create_optimizer(args, model_without_ddp)
-                    loss_scaler = utils.NativeScalerWithGradNormCount()
-                                
-                    lr_scheduler, num_epochs = create_scheduler_v2(
-                            optimizer,
-                            **scheduler_kwargs(args),
-                            updates_per_epoch=args.updates_per_epoch,
-                    )
-                    lr_scheduler.step(args.start_epoch*len(data_loader_train))
-                    
-                    optimizer.load_state_dict(checkpoint['optimizer'])
-                    lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
-                    if args.model_ema:
-                        utils._load_checkpoint_for_ema(model_ema, checkpoint['model_ema'])
-                    if 'scaler' in checkpoint:
-                        loss_scaler.load_state_dict(checkpoint['scaler'])
-                lr_scheduler.step(args.start_epoch*len(data_loader_train))
-                
-                print("Stop torch.cuda.amp.autocast in the current epoch")
-                use_amp = False
-                
-                continue
+        if (args.po_shortcut or args.channel_idle) and epoch == args.finetune_gain:
+            for name, param in model.module.named_parameters():
+                if "gain" in name:
+                    param.requires_grad_(True)
+                        
+            model_without_ddp = model.module
+            optimizer = create_optimizer(args, model_without_ddp)
+            loss_scaler = utils.NativeScalerWithGradNormCount()
+                            
+            lr_scheduler, num_epochs = create_scheduler_v2(
+                        optimizer,
+                        **scheduler_kwargs(args),
+                        updates_per_epoch=args.updates_per_epoch,
+            )
+            lr_scheduler.step(epoch*len(data_loader_train) // args.accumulation_steps)
             
-            if args.output_dir:
-                checkpoint_paths = [output_dir / 'checkpoint.pth']
-                for checkpoint_path in checkpoint_paths:
-                    utils.save_on_master({
-                        'model': model_without_ddp.state_dict(),
-                        'optimizer': optimizer.state_dict(),
-                        'lr_scheduler': lr_scheduler.state_dict(),
-                        'epoch': epoch,
-                        'model_ema': get_state_dict(model_ema),
-                        'scaler': loss_scaler.state_dict(),
-                        'args': args,
-                    }, checkpoint_path)
-            
-            test_stats = evaluate(data_loader_val, model, device)
-            print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
-            
-            if max_accuracy < test_stats["acc1"]:
-                max_accuracy = test_stats["acc1"]
-            print(f'Max accuracy: {max_accuracy:.2f}%')
-    
-            log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                         **{f'test_{k}': v for k, v in test_stats.items()},
-                         'epoch': epoch,
-                         'n_parameters': n_parameters}
-                  
-            if args.rank == 0:
-                wandb.log({"accuracy": test_stats["acc1"]})
-                
+        if args.distributed:
+            data_loader_train.sampler.set_epoch(epoch)
+        
+        train_stats, nan_loss_flag = train_one_epoch(
+            model, criterion, data_loader_train,
+            optimizer, device, epoch, loss_scaler,
+            args.clip_grad, model_ema, mixup_fn,
+            set_training_mode=args.train_mode,  # keep in eval mode for deit finetuning / train mode for training and deit III finetuning
+            lr_scheduler = lr_scheduler,
+            args = args,
+        )
+        
+        if nan_loss_flag:
             break
+        
+        test_stats = evaluate(data_loader_val, model, device)
+        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+        
+        if max_accuracy < test_stats["acc1"]:
+            max_accuracy = test_stats["acc1"]
+        print(f'Max accuracy: {max_accuracy:.2f}%')
+        
+        if args.rank == 0:
+            wandb.log({"accuracy": test_stats["acc1"]})
         
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -575,7 +524,10 @@ if __name__ == '__main__':
             config["parameters"]["norm"] = {"value": args.feature_norm, "distribution": "constant"}
             
             project_name = args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_" + args.wandb_suffix
-            sweep_id = wandb.sweep(config, project=project_name)
+            if args.wandb_sweep_id is not None:
+                sweep_id = args.wandb_sweep_id
+            else:
+                sweep_id = wandb.sweep(config, project=project_name)
             wandb.agent(sweep_id, function=main, count=args.wandb_sweep_count, project=project_name)
         else:
             cnt = 0

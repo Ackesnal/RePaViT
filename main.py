@@ -686,14 +686,14 @@ def main(args):
                         }, checkpoint_path)
                 
             print(f'Max accuracy: {max_accuracy:.2f}%')
+            
+            if args.rank == 0 and args.use_wandb:
+                wandb.log({"accuracy": test_stats["acc1"], "loss": train_stats["loss"], "epoch": epoch})
     
             log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                          **{f'test_{k}': v for k, v in test_stats.items()},
                          'epoch': epoch,
                          'n_parameters': n_parameters}
-                    
-            if args.rank == 0 and args.use_wandb:
-                wandb.log({"accuracy": test_stats["acc1"], "loss": train_stats["loss"], "epoch": epoch})
                 
             if args.output_dir and utils.is_main_process():
                 with (output_dir / "log.txt").open("a") as f:

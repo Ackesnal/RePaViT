@@ -82,8 +82,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         if (idx + 1) % args.accumulation_steps == 0:
             optimizer.zero_grad()
             lr_scheduler.step_update((epoch*len(data_loader)+idx) // args.accumulation_steps)
-        
-        
+            
         idx = idx + 1
 
         torch.cuda.synchronize()
