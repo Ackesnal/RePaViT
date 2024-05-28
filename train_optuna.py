@@ -226,7 +226,7 @@ def objective(trial):
         args.warmup_epochs = trial.suggest_int('warmup_epochs', 5, 20, step=5)
         args.weight_decay = trial.suggest_float('weight_decay', 1e-3, 1e-1)
         args.drop_path = trial.suggest_float('drop_path', 0.01, 0.1)
-        args.shortcut_gain = trial.suggest_float('shortcut_gain', 0.0, 1.0, step=0.2)
+        args.shortcut_gain = trial.suggest_float('shortcut_gain', 0.1, 1.0, step=0.1)
         config = {"opt": args.opt,
                   "batch_size": args.batch_size,
                   "lr": args.lr,
