@@ -219,7 +219,7 @@ def objective(trial):
         utils.init_distributed_mode(args)
     
     if args.rank == 0:
-        args.batch_size = trial.suggest_categorical('batch_size', [1024, 2048]) // args.world_size
+        args.batch_size = trial.suggest_categorical('batch_size', [1024, 2048, 3072, 4096]) // args.world_size
         args.opt = trial.suggest_categorical('opt', ["nadamw", "adamw", "lamb"])
         args.lr = trial.suggest_float('lr', 1e-4, 5e-3)
         args.min_lr = trial.suggest_float('min_lr', 5e-7, 5e-5)
@@ -245,12 +245,7 @@ def objective(trial):
             name = name + "POShortcut" + "_"
         name = name + "Gain" + str(args.shortcut_gain) + "_"
         name = name + str(random.randint(0, 100000000))
-        wandb.init(
-            # set the wandb project where this run will be logged
-            project=args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_" + args.wandb_suffix,
-            name=name,
-            # track hyperparameters and run metadata
-            config={
+        config={
             "model": args.model,
             "layer": "FFN" if args.channel_idle and not args.po_shortcut else "MHSA" if not args.channel_idle and args.po_shortcut else "Both" if args.channel_idle and args.po_shortcut else "None",
             "shortcut_gain": args.shortcut_gain,
@@ -262,9 +257,22 @@ def objective(trial):
             "opt": args.opt,
             "weight-decay": args.weight_decay,
             "epochs": args.epochs,
-            }, 
+        }
+        print("\nOptuna searched configuration:", config)
+        print()
+        
+        run = wandb.init(
+            # set the wandb project where this run will be logged
+            project=args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_" + args.wandb_suffix,
+            name=name,
+            # track hyperparameters and run metadata
+            config=config, 
             mode=os.environ['WANDB_MODE']
         )
+        print("\nWandB ID:", run.id)
+        print("WandB Project:", run.project)
+        print()
+        
     else:
         config = [None]
         torch.distributed.broadcast_object_list(config, src=0)
