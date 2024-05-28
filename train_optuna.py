@@ -6,6 +6,7 @@ import yaml
 import json
 import utils
 import wandb
+import pickle
 import random
 import argparse
 import datetime
@@ -32,7 +33,6 @@ from engine import train_one_epoch, evaluate
 import repavit
 
 import optuna
-from optuna.samplers import TPESampler
 
 
 def get_args_parser():
@@ -193,6 +193,8 @@ def get_args_parser():
     parser.add_argument('--wandb_no_loss', default=False, action='store_true')
     parser.add_argument('--wandb_suffix', default="optuna", type=str)
     parser.add_argument('--optuna_ntrials', default=1, type=int)
+    parser.add_argument('--study_name', default=None, type=str)
+    parser.add_argument('--resume_study', default=False, action='store_true')
     
     # NFViT Ablation Augments
     parser.add_argument('--shortcut_type', default='PerLayer', type=str, choices=['PerLayer', 'PerOperation'])
@@ -257,7 +259,7 @@ def objective(trial):
             "opt": args.opt,
             "weight-decay": args.weight_decay,
             "epochs": args.epochs,
-            "batch_size": args.batch_size,
+            "batch_size": args.batch_size * args.world_size,
         }
         print("\nOptuna searched configuration:", config)
         print()
@@ -549,8 +551,11 @@ def objective(trial):
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
     
+    
     # Clean up
     if args.rank == 0:
+        with open(f"{args.study_name}.pkl", "wb") as fout:
+            pickle.dump(study.sampler, fout)
         wandb.finish()
     
     return max_accuracy
@@ -558,6 +563,7 @@ def objective(trial):
 
 # Glogal variable
 args = None
+study = None
         
                                     
 if __name__ == '__main__':
@@ -582,10 +588,27 @@ if __name__ == '__main__':
     
     if args.distributed:
         if args.rank == 0:
-            study = optuna.create_study(direction='maximize', sampler=TPESampler(), 
-                                        pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=150,
-                                                                           interval_steps=5, n_min_trials=3)
-                                        )
+            if not args.resume_study:
+                if args.study_name is None:
+                    args.study_name = args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_optuna"
+                storage_url = f"sqlite:///{args.study_name}.db"
+                print(args.study_name, storage_url)
+                study = optuna.create_study(study_name=args.study_name, storage=f"sqlite:///{args.study_name}.db",
+                                            direction='maximize', sampler=optuna.samplers.TPESampler(), 
+                                            pruner=optuna.pruners.MedianPruner(n_startup_trials=4, n_warmup_steps=150,
+                                                                               interval_steps=5, n_min_trials=4)
+                                            )
+            else:
+                assert args.study_name is not None, "Must resume optuna study with a study name"
+                print(f"Resume the study {args.study_name}, from sqlite:///{args.study_name}.db")
+                restored_sampler = pickle.load(open(f"{args.study_name}.pkl", "rb"))
+                study = optuna.load_study(study_name=args.study_name, storage=f"sqlite:///{args.study_name}.db",
+                                          sampler=restored_sampler, 
+                                          pruner=optuna.pruners.MedianPruner(n_startup_trials=4, n_warmup_steps=150,
+                                                                             interval_steps=5, n_min_trials=4)
+                                          )
+                study.enqueue_trial(study.trials[-1].params)
+                
             study.optimize(objective, n_trials=args.optuna_ntrials)
         else:
             cnt = 0
