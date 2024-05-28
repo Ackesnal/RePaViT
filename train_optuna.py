@@ -257,6 +257,7 @@ def objective(trial):
             "opt": args.opt,
             "weight-decay": args.weight_decay,
             "epochs": args.epochs,
+            "batch_size": args.batch_size,
         }
         print("\nOptuna searched configuration:", config)
         print()
