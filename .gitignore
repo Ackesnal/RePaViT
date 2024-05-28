@@ -1,0 +1,5 @@
+./output/*
+./__pycache__/*
+./wandb/*
+./*.db
+./*.pkl
