@@ -465,8 +465,6 @@ def objective(trial):
     # just dispatches to the original criterion if args.distillation_type is 'none'
     criterion = DistillationLoss(criterion, teacher_model, args.distillation_type, 
                                  args.distillation_alpha, args.distillation_tau)
-
-    output_dir = Path(args.output_dir)
     
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
