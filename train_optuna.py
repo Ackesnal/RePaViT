@@ -581,7 +581,10 @@ if __name__ == '__main__':
     
     if args.distributed:
         if args.rank == 0:
-            study = optuna.create_study(direction='maximize', sampler=TPESampler(), pruner=optuna.pruners.HyperbandPruner())
+            study = optuna.create_study(direction='maximize', sampler=TPESampler(), 
+                                        pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=150,
+                                                                           interval_steps=5, n_min_trials=3)
+                                        )
             study.optimize(objective, n_trials=args.optuna_ntrials)
         else:
             cnt = 0
