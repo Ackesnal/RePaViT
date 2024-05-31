@@ -266,6 +266,7 @@ def objective(trial):
             "layer_scale": args.layer_scale,
             "init_values": args.init_values,
             "batch_size": args.batch_size * args.world_size,
+            "drop_path": args.drop_path,
         }
         print("\nOptuna searched configuration:", config)
         print()
