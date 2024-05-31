@@ -228,7 +228,10 @@ def objective(trial):
         args.warmup_epochs = trial.suggest_int('warmup_epochs', 5, 20, step=5)
         args.weight_decay = trial.suggest_float('weight_decay', 1e-3, 1e-1)
         args.drop_path = trial.suggest_float('drop_path', 0.01, 0.1)
-        args.shortcut_gain = trial.suggest_float('shortcut_gain', 0.1, 1.0, step=0.1)
+        if not args.layer_scale:
+            args.shortcut_gain = trial.suggest_float('shortcut_gain', 0.1, 1.0, step=0.1)
+        else:
+            args.init_values = trial.suggest_float('init_values', 0.0, 1e-4)
         config = {"opt": args.opt,
                   "batch_size": args.batch_size,
                   "lr": args.lr,
@@ -236,7 +239,8 @@ def objective(trial):
                   "warmup_epochs": args.warmup_epochs,
                   "weight_decay": args.weight_decay,
                   "drop_path": args.drop_path,
-                  "shortcut_gain": args.shortcut_gain}
+                  "shortcut_gain": args.shortcut_gain,
+                  "init_values": args.init_values}
         args.unscale_lr = True
         torch.distributed.broadcast_object_list([config], src=0)
         
@@ -259,6 +263,8 @@ def objective(trial):
             "opt": args.opt,
             "weight-decay": args.weight_decay,
             "epochs": args.epochs,
+            "layer_scale": args.layer_scale,
+            "init_values": args.init_values,
             "batch_size": args.batch_size * args.world_size,
         }
         print("\nOptuna searched configuration:", config)
@@ -289,6 +295,7 @@ def objective(trial):
         args.shortcut_gain = config["shortcut_gain"]
         args.drop_path = config["drop_path"]
         args.batch_size = config["batch_size"]
+        args.init_values = config["init_values"]
         args.unscale_lr = True
         
     print(args)

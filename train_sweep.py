@@ -227,6 +227,7 @@ def main(config=None):
         args.weight_decay = config["weight_decay"]
         args.shortcut_gain = config["shortcut_gain"]
         args.drop_path = config["drop_path"]
+        args.init_values = config["init_values"]
         args.batch_size = config["batch_size"] // args.world_size
         args.unscale_lr = True
         torch.distributed.broadcast_object_list([config], src=0)
@@ -242,6 +243,7 @@ def main(config=None):
         args.weight_decay = config["weight_decay"]
         args.shortcut_gain = config["shortcut_gain"]
         args.drop_path = config["drop_path"]
+        args.init_values = config["init_values"]
         args.batch_size = config["batch_size"] // args.world_size
         args.unscale_lr = True
         
@@ -525,6 +527,7 @@ if __name__ == '__main__':
             config["parameters"]["model"] = {"value":args.model, "distribution": "constant"}
             config["parameters"]["layer"] = {"value": "FFN" if args.channel_idle and not args.po_shortcut else "MHSA" if not args.channel_idle and args.po_shortcut else "Both" if args.channel_idle and args.po_shortcut else "None", "distribution": "constant"}
             config["parameters"]["norm"] = {"value": args.feature_norm, "distribution": "constant"}
+            config["parameters"]["layer_scale"] = {"value": args.layer_scale, "distribution": "constant"}
             
             project_name = args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_" + args.wandb_suffix
             if args.wandb_sweep_id is not None:

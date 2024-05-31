@@ -35,8 +35,15 @@ parameters:
 #    max: 0.13976
 #    distribution: q_log_uniform
 #    q: 0.1
+  init_values:
+#    value: 1.0
+#    distribution: constant
+    min: 0
+    max: 1e-4
+    distribution: uniform
 early_terminate:
   type: hyperband
-  min_iter: 100
+  min_iter: 150
   max_iter: 200
+  s: 5
   eta: 3
