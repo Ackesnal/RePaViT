@@ -249,8 +249,8 @@ def objective(trial):
             name = name + "ChannelIdle" + "_"
         if args.po_shortcut:
             name = name + "POShortcut" + "_"
-        name = name + "Gain" + str(args.shortcut_gain) + "_"
-        name = name + str(random.randint(0, 100000000))
+        name = name + "Gain" + str(round(args.shortcut_gain, 1)) + "_"
+        name = name + str(random.randint(0, 10000))
         config={
             "model": args.model,
             "layer": "FFN" if args.channel_idle and not args.po_shortcut else "MHSA" if not args.channel_idle and args.po_shortcut else "Both" if args.channel_idle and args.po_shortcut else "None",
@@ -539,19 +539,24 @@ def objective(trial):
             # For early stop
             trial.report(test_stats["acc1"], epoch)
             if trial.should_prune():
-                for i in range(1, args.world_size):
-                    # Send a tensor to notify exit
-                    torch.distributed.send(tensor=torch.tensor([1], device=device), dst=i)
+                exit_signal = torch.tensor([1]).to(args.gpu)
+                torch.distributed.all_reduce(exit_signal, op=torch.distributed.ReduceOp.SUM)
+                torch.distributed.barrier()
+                with open(f"{args.study_name}.pkl", "wb") as fout:
+                    pickle.dump(study.sampler, fout)
+                wandb.finish()
                 raise optuna.TrialPruned()
+                return max_accuracy
             else:
-                for i in range(1, args.world_size):
-                    # Send a tensor to notify exit
-                    torch.distributed.send(tensor=torch.tensor([0], device=device), dst=i)
+                exit_signal = torch.tensor([0]).to(args.gpu)
+                torch.distributed.all_reduce(exit_signal, op=torch.distributed.ReduceOp.SUM)
+                torch.distributed.barrier()
         else:
-            exit_signal = torch.tensor([0], device=device)
-            torch.distributed.recv(tensor=exit_signal, src=0)
-            if exit_signal.item() == 1:
-                break
+            exit_signal = torch.tensor([0]).to(args.gpu)
+            torch.distributed.all_reduce(exit_signal, op=torch.distributed.ReduceOp.SUM)
+            torch.distributed.barrier()
+            if exit_signal.item() >= 1:
+                return
         
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -608,12 +613,11 @@ if __name__ == '__main__':
                 assert args.study_name is not None, "Must resume optuna study with a study name"
                 print(f"Resume the study {args.study_name}, from sqlite:///{args.study_name}.db")
                 restored_sampler = pickle.load(open(f"{args.study_name}.pkl", "rb"))
-                study = optuna.load_study(study_name=args.study_name, storage=f"sqlite:///{args.study_name}.db",
-                                          sampler=restored_sampler, 
-                                          pruner=optuna.pruners.MedianPruner(n_startup_trials=4, n_warmup_steps=150,
-                                                                             interval_steps=5, n_min_trials=4)
-                                          )
-                study.enqueue_trial(study.trials[-1].params)
+                study = optuna.create_study(study_name=args.study_name, storage=f"sqlite:///{args.study_name}.db",
+                                            sampler=restored_sampler, load_if_exists=True,
+                                            pruner=optuna.pruners.MedianPruner(n_startup_trials=4, n_warmup_steps=150,
+                                                                               interval_steps=5, n_min_trials=4),
+                                            )
                 
             study.optimize(objective, n_trials=args.optuna_ntrials)
         else:
