@@ -445,9 +445,9 @@ def main(args):
         args.lr = args.lr * args.batch_size * utils.get_world_size() / 1024.0
         args.warmup_lr = args.warmup_lr * args.batch_size * utils.get_world_size() / 1024.0
         args.min_lr = args.min_lr * args.batch_size * utils.get_world_size() / 1024.0
-        args.step_on_epochs = False
-        args.sched_on_updates = True
-        args.updates_per_epoch = len(data_loader_train)
+    args.step_on_epochs = False
+    args.sched_on_updates = True
+    args.updates_per_epoch = len(data_loader_train)
     # gradient accumulation also need to scale the learning rate
     if args.accumulation_steps > 1:
         args.lr = args.lr * args.accumulation_steps
