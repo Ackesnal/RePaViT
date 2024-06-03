@@ -86,6 +86,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         idx = idx + 1
 
         torch.cuda.synchronize()
+        
+        # del loss_is_nan to prevent memory leak
+        del loss_is_nan
             
         if model_ema is not None:
             model_ema.update(model)

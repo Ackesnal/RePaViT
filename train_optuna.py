@@ -545,18 +545,23 @@ def objective(trial):
                 with open(f"{args.study_name}.pkl", "wb") as fout:
                     pickle.dump(study.sampler, fout)
                 wandb.finish()
+                torch.distributed.destroy_process_group()
+                del exit_signal
                 raise optuna.TrialPruned()
-                return max_accuracy
             else:
                 exit_signal = torch.tensor([0]).to(args.gpu)
                 torch.distributed.all_reduce(exit_signal, op=torch.distributed.ReduceOp.SUM)
                 torch.distributed.barrier()
+                del exit_signal
         else:
             exit_signal = torch.tensor([0]).to(args.gpu)
             torch.distributed.all_reduce(exit_signal, op=torch.distributed.ReduceOp.SUM)
             torch.distributed.barrier()
             if exit_signal.item() >= 1:
+                torch.distributed.destroy_process_group()
                 return
+            else:
+                del exit_signal
         
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -568,6 +573,8 @@ def objective(trial):
         with open(f"{args.study_name}.pkl", "wb") as fout:
             pickle.dump(study.sampler, fout)
         wandb.finish()
+        
+    torch.distributed.destroy_process_group()
     
     return max_accuracy
 
@@ -575,7 +582,6 @@ def objective(trial):
 # Glogal variable
 args = None
 study = None
-        
                                     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('RePaViT training and evaluation script', parents=[get_args_parser()])
