@@ -543,7 +543,7 @@ def main(args):
         name = name + str(random.randint(0, 10000))
         wandb.init(
             # set the wandb project where this run will be logged
-            project=args.model.split("_")[0] + "_" + args.model.split("_")[1] + args.wandb_suffix,
+            project=args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_" + args.wandb_suffix,
             name=name,
             # track hyperparameters and run metadata
             config={
