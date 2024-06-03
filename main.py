@@ -539,8 +539,8 @@ def main(args):
             name = name + "ChannelIdle" + "_"
         if args.po_shortcut:
             name = name + "POShortcut" + "_"
-        name = name + "Gain" + str(args.shortcut_gain) + "_"
-        name = name + str(random.randint(0, 100000000))
+        name = name + "Gain" + str(round(args.shortcut_gain, 1)) + "_"
+        name = name + str(random.randint(0, 10000))
         wandb.init(
             # set the wandb project where this run will be logged
             project=args.model.split("_")[0] + "_" + args.model.split("_")[1] + args.wandb_suffix,
@@ -558,6 +558,7 @@ def main(args):
             "opt": args.opt,
             "weight-decay": args.weight_decay,
             "epochs": args.epochs,
+            "drop_path": args.drop_path,
             }, 
             mode=os.environ['WANDB_MODE']
         )

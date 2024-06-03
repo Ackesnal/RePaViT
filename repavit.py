@@ -136,7 +136,7 @@ class Mlp(nn.Module):
         
     def reparam(self):
         
-        return
+        return self.ffn1.weight, self.ffn1.bias
         
         
         
@@ -246,7 +246,10 @@ class Attention(nn.Module):
             q, k, v = qkv[0], qkv[1], qkv[2]
             
             # Self-attention
-            x = nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop)
+            attn = torch.matmul(q, k.transpose(-1,-2))
+            attn = attn.softmax(-1)
+            x = torch.matmul(attn, v)
+            #x = nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop)
                 
             # Reshape x back to input shape
             x = rearrange(x, 'b nh n hc -> b n (nh hc)')
@@ -364,10 +367,6 @@ class RepAttention(nn.Module):
         self.scale = self.dim_head ** -0.5 # scale
         
         self.qkv = nn.Linear(dim, dim*3)
-        #self.ffn1 = nn.Linear(dim, dim)
-        #self.ffn2 = nn.Linear(dim, dim)
-        #self.ffn3 = nn.Linear(dim, dim)
-        #self.act = nn.GELU()
         self.out = nn.Linear(dim, dim)
         self.norm = nn.LayerNorm(dim)
         
@@ -386,22 +385,23 @@ class RepAttention(nn.Module):
         return self.out(x) + shortcut
 
 
-class RepMlp(nn.Module):
+class RePaMlp(nn.Module):
     def __init__(self, weights, biases):
         super().__init__()
         
+        dim = weights.shape[1]
         # Hyperparameters
         self.ffn1 = nn.Linear(dim, dim)
         self.ffn2 = nn.Linear(dim, dim)
         self.ffn3 = nn.Linear(dim, dim)
         self.act = nn.GELU()
         
-        self.ffn1.weight.data = weights[0]
-        self.ffn1.bias.data = biases[0]
-        self.ffn2.weight.data = weights[0]
-        self.ffn2.bias.data = biases[0]
-        self.ffn3.weight.data = weights[0]
-        self.ffn3.bias.data = biases[0]
+        #self.ffn1.weight.data = weights[0]
+        #self.ffn1.bias.data = biases[0]
+        #self.ffn2.weight.data = weights[0]
+        #self.ffn2.bias.data = biases[0]
+        #self.ffn3.weight.data = weights[0]
+        #self.ffn3.bias.data = biases[0]
 
         
     def forward(self, x):
@@ -452,7 +452,7 @@ class NFAttentionBlock(nn.Module):
     def reparam(self):
         weights, biases = self.mlp.reparam()
         del self.mlp
-        self.mlp = RepMlp(weights, biases)
+        self.mlp = RePaMlp(weights, biases)
         return
         """
         if self.affected_layers == "FFN":
