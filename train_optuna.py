@@ -538,35 +538,73 @@ def objective(trial):
             wandb.log({"accuracy": test_stats["acc1"]})
             # For early stop
             trial.report(test_stats["acc1"], epoch)
+            # 确保全部rank都同步到此开始接收指令             
+            torch.cuda.synchronize()
+            torch.distributed.barrier()
+            
             if trial.should_prune():
+                # 传递指令
                 exit_signal = torch.tensor([1]).to(args.gpu)
+                torch.distributed.barrier()
                 torch.distributed.all_reduce(exit_signal, op=torch.distributed.ReduceOp.SUM)
+                
+                # 确保指令全部rank都同步到                
+                torch.cuda.synchronize()
+                
+                # 记录当前optuna sampler信息
                 with open(f"{args.study_name}.pkl", "wb") as fout:
                     pickle.dump(study.sampler, fout)
+                    
+                # 结束当前的wandb session
                 wandb.finish()
+                
+                # 停止当前的process group
                 if torch.distributed.is_initialized():
                     torch.distributed.destroy_process_group()
+                    
+                # 删除指令占用memory
                 del exit_signal
+                
+                # 报错停止当前训练
                 raise optuna.TrialPruned()
             else:
+                # 传递指令
                 exit_signal = torch.tensor([0]).to(args.gpu)
+                torch.distributed.barrier()
                 torch.distributed.all_reduce(exit_signal, op=torch.distributed.ReduceOp.SUM)
+                
+                # 删除指令占用memory
                 del exit_signal
         else:
+            # 确保全部rank都同步到此开始接收指令             
+            torch.cuda.synchronize()
+            torch.distributed.barrier()
+            
+            # 接收指令
             exit_signal = torch.tensor([0]).to(args.gpu)
+            torch.distributed.barrier()
             torch.distributed.all_reduce(exit_signal, op=torch.distributed.ReduceOp.SUM)
+            
+            # 判断是否训练中断
             if exit_signal.item() >= 1:
+                # 如果训练中断，那么停止当前的process group
                 if torch.distributed.is_initialized():
                     torch.distributed.destroy_process_group()
+                    
+                # 删除指令占用memory
+                del exit_signal
+                
+                # 结束当前训练
                 return
             else:
+                # 如果训练没有中断，那么只停止当前的process group
                 del exit_signal
         
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
     
-    # Clean up
+    # Clean up 正常结束训练
     if args.rank == 0:
         with open(f"{args.study_name}.pkl", "wb") as fout:
             pickle.dump(study.sampler, fout)
