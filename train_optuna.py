@@ -541,24 +541,23 @@ def objective(trial):
             if trial.should_prune():
                 exit_signal = torch.tensor([1]).to(args.gpu)
                 torch.distributed.all_reduce(exit_signal, op=torch.distributed.ReduceOp.SUM)
-                torch.distributed.barrier()
                 with open(f"{args.study_name}.pkl", "wb") as fout:
                     pickle.dump(study.sampler, fout)
                 wandb.finish()
-                torch.distributed.destroy_process_group()
+                if torch.distributed.is_initialized():
+                    torch.distributed.destroy_process_group()
                 del exit_signal
                 raise optuna.TrialPruned()
             else:
                 exit_signal = torch.tensor([0]).to(args.gpu)
                 torch.distributed.all_reduce(exit_signal, op=torch.distributed.ReduceOp.SUM)
-                torch.distributed.barrier()
                 del exit_signal
         else:
             exit_signal = torch.tensor([0]).to(args.gpu)
             torch.distributed.all_reduce(exit_signal, op=torch.distributed.ReduceOp.SUM)
-            torch.distributed.barrier()
             if exit_signal.item() >= 1:
-                torch.distributed.destroy_process_group()
+                if torch.distributed.is_initialized():
+                    torch.distributed.destroy_process_group()
                 return
             else:
                 del exit_signal
@@ -567,15 +566,15 @@ def objective(trial):
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
     
-    
     # Clean up
     if args.rank == 0:
         with open(f"{args.study_name}.pkl", "wb") as fout:
             pickle.dump(study.sampler, fout)
         wandb.finish()
-        
-    torch.distributed.destroy_process_group()
     
+    if torch.distributed.is_initialized():
+        torch.distributed.destroy_process_group()
+        
     return max_accuracy
 
 
