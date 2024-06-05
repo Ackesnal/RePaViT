@@ -221,7 +221,7 @@ def objective(trial):
     torch.cuda.empty_cache()
     
     if args.rank == 0:
-        args.batch_size = trial.suggest_categorical('batch_size', [1024, 2048]) // args.world_size
+        args.batch_size = trial.suggest_categorical('batch_size', [1024, 2048, 3072, 4096]) // args.world_size
         args.opt = trial.suggest_categorical('opt', ["nadamw", "adamw", "lamb"])
         args.lr = trial.suggest_float('lr', 1e-4, 5e-3)
         args.min_lr = trial.suggest_float('min_lr', 5e-7, 5e-5)
