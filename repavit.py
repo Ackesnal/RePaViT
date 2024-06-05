@@ -595,7 +595,7 @@ class NFTransformer(VisionTransformer):
             
         
 @register_model
-def RePaViT_tiny_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+def RePaViT_Tiny_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     model = NFTransformer(patch_size=16, embed_dim=192, depth=12, pre_norm=True,
                           num_heads=3, mlp_ratio=4, qkv_bias=True, fc_norm=False,
                           norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
@@ -604,15 +604,29 @@ def RePaViT_tiny_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pret
     
     
 @register_model
-def RePaViT_small_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+def RePaViT_Small_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     model = NFTransformer(patch_size=16, embed_dim=384, depth=12, pre_norm=True,
                           num_heads=6, mlp_ratio=4, qkv_bias=True, fc_norm=False,
                           norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
     
 @register_model
-def RePaViT_base_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+def RePaViT_Base_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     model = NFTransformer(patch_size=16, embed_dim=768, depth=12, pre_norm=True,
                           num_heads=12, mlp_ratio=4, qkv_bias=True, fc_norm=False,
+                          norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    return model
+    
+@register_model
+def RePaViT_Large_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+    model = NFTransformer(patch_size=16, embed_dim=1024, depth=24, pre_norm=True,
+                          num_heads=16, mlp_ratio=4, qkv_bias=True, fc_norm=False,
+                          norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    return model
+    
+@register_model
+def RePaViT_Huge_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+    model = NFTransformer(patch_size=16, embed_dim=1280, depth=32, pre_norm=True,
+                          num_heads=16, mlp_ratio=4, qkv_bias=True, fc_norm=False,
                           norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
