@@ -39,11 +39,11 @@ WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLUR
 --data-path /scratch/itee/uqxxu16/data/imagenet \
 --feature_norm=BatchNorm \
 --lr=5e-3 \
---min-lr=1e-5 \
+--min-lr=4e-5 \
 --warmup-lr=1e-6 \
 --warmup-epochs=20 \
 --unscale-lr \
---weight-decay=0.05 \
+--weight-decay=0.07 \
 --opt=lamb \
 --num_workers=30 \
 --channel_idle \
