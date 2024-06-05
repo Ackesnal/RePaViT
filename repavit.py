@@ -583,7 +583,6 @@ class NFTransformer(VisionTransformer):
                 x = blk(x)
         
         if self.feature_norm == "BatchNorm":
-            print("yes")
             x = self.norm(x.transpose(-1, -2)).transpose(-1, -2)
         else:
             x = self.norm(x)

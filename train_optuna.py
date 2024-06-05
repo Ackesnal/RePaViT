@@ -222,15 +222,14 @@ def objective(trial):
     
     if args.rank == 0:
         args.batch_size = trial.suggest_categorical('batch_size', [1024, 2048, 3072, 4096]) // args.world_size
-        args.opt = "lamb"
         args.lr = trial.suggest_float('lr', 1e-4, 1e-2)
         args.min_lr = trial.suggest_float('min_lr', 5e-7, 5e-5)
-        args.warmup_epochs = 20
         args.weight_decay = trial.suggest_float('weight_decay', 0.005, 0.2)
         args.drop_path = trial.suggest_float('drop_path', 0.01, 0.2)
-        if not args.layer_scale:
-            args.shortcut_gain = trial.suggest_float('shortcut_gain', 0.1, 1.0, step=0.1)
-        else:
+        args.warmup_epochs = 20
+        args.shortcut_gain = 1.0
+        args.opt = "lamb"
+        if args.layer_scale:
             args.init_values = trial.suggest_float('init_values', 0.0, 1e-4)
         config = {"opt": args.opt,
                   "batch_size": args.batch_size,
