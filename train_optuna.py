@@ -217,6 +217,8 @@ def get_args_parser():
 
 
 def objective(trial):
+    # 清除上一轮可能存在的GPU占用
+    torch.cuda.empty_cache()
     
     if args.rank == 0:
         args.batch_size = trial.suggest_categorical('batch_size', [1024, 2048]) // args.world_size
@@ -565,6 +567,7 @@ def objective(trial):
                 
             # 判断是否训练中断
             if exit_signal.item() >= 1:
+                torch.cuda.empty_cache()
                 return
       
     total_time = time.time() - start_time
@@ -576,7 +579,7 @@ def objective(trial):
         with open(f"{args.study_name}.pkl", "wb") as fout:
             pickle.dump(study.sampler, fout)
         wandb.finish()
-    
+        
     return max_accuracy
 
 
