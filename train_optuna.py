@@ -222,12 +222,12 @@ def objective(trial):
     
     if args.rank == 0:
         args.batch_size = trial.suggest_categorical('batch_size', [1024, 2048, 3072, 4096]) // args.world_size
-        args.opt = trial.suggest_categorical('opt', ["nadamw", "adamw", "lamb"])
-        args.lr = trial.suggest_float('lr', 1e-4, 5e-3)
+        args.opt = "lamb"
+        args.lr = trial.suggest_float('lr', 1e-4, 1e-2)
         args.min_lr = trial.suggest_float('min_lr', 5e-7, 5e-5)
-        args.warmup_epochs = trial.suggest_int('warmup_epochs', 5, 20, step=5)
-        args.weight_decay = trial.suggest_float('weight_decay', 1e-3, 1e-1)
-        args.drop_path = trial.suggest_float('drop_path', 0.01, 0.1)
+        args.warmup_epochs = 20
+        args.weight_decay = trial.suggest_float('weight_decay', 0.005, 0.2)
+        args.drop_path = trial.suggest_float('drop_path', 0.01, 0.2)
         if not args.layer_scale:
             args.shortcut_gain = trial.suggest_float('shortcut_gain', 0.1, 1.0, step=0.1)
         else:
@@ -618,8 +618,8 @@ if __name__ == '__main__':
                 print(args.study_name, storage_url)
                 study = optuna.create_study(study_name=args.study_name, storage=f"sqlite:///{args.study_name}.db",
                                             direction='maximize', sampler=optuna.samplers.TPESampler(), 
-                                            pruner=optuna.pruners.MedianPruner(n_startup_trials=4, n_warmup_steps=150,
-                                                                               interval_steps=5, n_min_trials=4)
+                                            pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=200,
+                                                                               interval_steps=5, n_min_trials=3)
                                             )
             else:
                 assert args.study_name is not None, "Must resume optuna study with a study name"
@@ -627,8 +627,8 @@ if __name__ == '__main__':
                 restored_sampler = pickle.load(open(f"{args.study_name}.pkl", "rb"))
                 study = optuna.create_study(study_name=args.study_name, storage=f"sqlite:///{args.study_name}.db",
                                             sampler=restored_sampler, load_if_exists=True,
-                                            pruner=optuna.pruners.MedianPruner(n_startup_trials=4, n_warmup_steps=150,
-                                                                               interval_steps=5, n_min_trials=4),
+                                            pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=200,
+                                                                               interval_steps=5, n_min_trials=3),
                                             )
                 
             study.optimize(objective, n_trials=args.optuna_ntrials)

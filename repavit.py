@@ -48,11 +48,8 @@ class Mlp(nn.Module):
         ######################## ↑↑↑↑↑↑ ########################
         
         ######################## ↓↓↓↓↓↓ ########################
-        # Channel-idle and shortcut gain
+        # Channel-idle
         self.channel_idle = channel_idle
-        if self.channel_idle:
-            self.gain = nn.Parameter(torch.ones((1))*shortcut_gain, 
-                                     requires_grad=False)
         ######################## ↑↑↑↑↑↑ ########################
         
         ######################## ↓↓↓↓↓↓ ########################
@@ -116,10 +113,6 @@ class Mlp(nn.Module):
         # FFN out
         x = self.ffn2(x)
         
-        # Add shortcut gain (1)
-        if self.channel_idle:
-            x = x * self.gain
-        
         # Add Layer Scale (dim)
         if self.layer_scale:
             x = x * self.ls
@@ -131,7 +124,6 @@ class Mlp(nn.Module):
         ######################## ↑↑↑ 2-layer MLP ↑↑↑ ########################
         #if x.get_device() == 0:
             #print("x after ffn:", x.std(-1).mean().item(), x.mean().item(), x.max().item(), x.min().item())
-            #print("Shortcut gain", self.gain.data.item())
         return x
         
     def reparam(self):
@@ -554,9 +546,11 @@ class NFTransformer(VisionTransformer):
         self.dim_head = embed_dim//self.num_head
         self.pre_norm = pre_norm
         
-        self.feature_norm = feature_norm
-        
         self.use_checkpoint = False
+        
+        self.feature_norm = feature_norm
+        if self.feature_norm == "BatchNorm":
+            self.norm = nn.BatchNorm1d(embed_dim) if not fc_norm else nn.Identity()
         
         self._init_standard_weights()
         
@@ -574,7 +568,27 @@ class NFTransformer(VisionTransformer):
                 elif "bias" in name:
                     nn.init.constant_(param, 0.0)
                 
-            
+    def forward_features(self, x):
+        x = self.patch_embed(x)
+        x = self._pos_embed(x)
+        B, N, C = x.shape
+        
+        if self.pre_norm:
+            x = self.norm_pre(x)
+        
+        for i, blk in enumerate(self.blocks):
+            if self.training and self.use_checkpoint:
+                x = ckpt.checkpoint(blk, x)
+            else:
+                x = blk(x)
+        
+        if self.feature_norm == "BatchNorm":
+            print("yes")
+            x = self.norm(x.transpose(-1, -2)).transpose(-1, -2)
+        else:
+            x = self.norm(x)
+        return x
+                
     def reparam(self):
         for blk in self.blocks:
             blk.reparam()
