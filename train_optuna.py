@@ -6,6 +6,7 @@ import yaml
 import json
 import utils
 import wandb
+import optuna
 import pickle
 import random
 import argparse
@@ -31,8 +32,8 @@ from augment import new_data_aug_generator
 from engine import train_one_epoch, evaluate
 
 import repavit
+import repaswin
 
-import optuna
 
 
 def get_args_parser():
@@ -221,7 +222,7 @@ def objective(trial):
     torch.cuda.empty_cache()
     
     if args.rank == 0:
-        args.batch_size = trial.suggest_categorical('batch_size', [1024, 2048, 3072, 4096]) // args.world_size
+        args.batch_size = trial.suggest_categorical('batch_size', [1024]) // args.world_size
         args.lr = trial.suggest_float('lr', 1e-4, 1e-2)
         args.min_lr = trial.suggest_float('min_lr', 5e-7, 5e-5)
         args.weight_decay = trial.suggest_float('weight_decay', 0.005, 0.2)

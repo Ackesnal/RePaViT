@@ -30,6 +30,7 @@ from augment import new_data_aug_generator
 from engine import train_one_epoch, evaluate
 
 import repavit
+import repaswin
 
 
 def get_args_parser():

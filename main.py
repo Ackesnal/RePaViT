@@ -31,6 +31,7 @@ from engine import train_one_epoch, evaluate
 from ptflops import get_model_complexity_info
 
 import repavit
+import repaswin
 
 
 def get_args_parser():
