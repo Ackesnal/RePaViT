@@ -250,9 +250,9 @@ class WindowAttention(nn.Module):
             mask = mask.unsqueeze(1).unsqueeze(0).expand(B_//mask.shape[0], -1, self.num_heads, -1, -1).reshape(B_, self.num_heads, N, N)
             relative_position_bias = relative_position_bias + mask
         
-        x = nn.functional.scaled_dot_product_attention(q, k, v, attn_mask = relative_position_bias.contiguous())
-            
+        x = nn.functional.scaled_dot_product_attention(q, k, v, attn_mask = relative_position_bias)
         x = x.transpose(1, 2).reshape(B_, N, C)
+        
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
