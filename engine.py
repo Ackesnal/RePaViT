@@ -50,7 +50,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         
         if use_amp:
             with torch.cuda.amp.autocast():
-                outputs = model(samples)
+                outputs = model(samples, epoch)
                 loss = criterion(samples, outputs, targets)
                 loss = loss / args.accumulation_steps
         else:

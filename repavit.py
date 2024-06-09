@@ -76,7 +76,7 @@ class Mlp(nn.Module):
             self.ls = nn.Parameter(torch.ones((self.dim_out)) * init_values)
         ######################## ↑↑↑↑↑↑ ########################
         
-    def forward(self, x):
+    def forward(self, x, epoch: int= 0):
         B, N, C = x.shape
         ######################## ↓↓↓ 2-layer MLP ↓↓↓ ########################
         shortcut = x # B, N, C
@@ -96,8 +96,9 @@ class Mlp(nn.Module):
         
         # Activation
         if self.channel_idle:
+            act_channels = int((1 - (epoch+1) / 300)*3*C + C)
             mask = torch.zeros_like(x, dtype=torch.bool)
-            mask[:, :, :C] = True
+            mask[:, :, :act_channels] = True
             x = torch.where(mask, self.act(x), x)
         else:
             x = self.act(x)
@@ -401,7 +402,7 @@ class RePaMlp(nn.Module):
         return x
         
 
-class NFAttentionBlock(nn.Module):
+class RePaAttentionBlock(nn.Module):
     # taken from https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/vision_transformer.py
     def __init__(self, dim, num_head, mlp_ratio=4., bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., act_layer=nn.GELU, channel_idle=False, po_shortcut=False, 
@@ -436,9 +437,9 @@ class NFAttentionBlock(nn.Module):
                            act_layer=act_layer, drop_path=drop_path, 
                            layer_scale=layer_scale, init_values=init_values)
     
-    def forward(self, x):
+    def forward(self, x, epoch: int= 0):
         x = self.attn(x)
-        x = self.mlp(x)
+        x = self.mlp(x, epoch)
         return x
     
     def reparam(self):
@@ -494,7 +495,7 @@ class NFTransformer(VisionTransformer):
             embed_layer=PatchEmbed,
             norm_layer=nn.LayerNorm,
             act_layer=nn.GELU,
-            block_fn=NFAttentionBlock,
+            block_fn=RePaAttentionBlock,
             feature_norm='LayerNorm',
             channel_idle=False,
             po_shortcut=False,
@@ -545,13 +546,6 @@ class NFTransformer(VisionTransformer):
         self.num_head = num_heads
         self.dim_head = embed_dim//self.num_head
         self.pre_norm = pre_norm
-        
-        self.use_checkpoint = False
-        
-        self.feature_norm = feature_norm
-        if self.feature_norm == "BatchNorm":
-            self.norm = nn.BatchNorm1d(embed_dim) if not fc_norm else nn.Identity()
-        
         self._init_standard_weights()
         
     def _init_standard_weights(self):
@@ -568,24 +562,22 @@ class NFTransformer(VisionTransformer):
                 elif "bias" in name:
                     nn.init.constant_(param, 0.0)
                 
-    def forward_features(self, x):
+    def forward_features(self, x: torch.Tensor, epoch: int= 0) -> torch.Tensor:
         x = self.patch_embed(x)
         x = self._pos_embed(x)
-        B, N, C = x.shape
-        
-        if self.pre_norm:
-            x = self.norm_pre(x)
-        
-        for i, blk in enumerate(self.blocks):
-            if self.training and self.use_checkpoint:
-                x = ckpt.checkpoint(blk, x)
-            else:
-                x = blk(x)
-        
-        if self.feature_norm == "BatchNorm":
-            x = self.norm(x.transpose(-1, -2)).transpose(-1, -2)
+        x = self.patch_drop(x)
+        x = self.norm_pre(x)
+        if self.grad_checkpointing and not torch.jit.is_scripting():
+            x = checkpoint_seq(self.blocks, x, epoch)
         else:
-            x = self.norm(x)
+            for blk in self.blocks:
+                x = blk(x, epoch)
+        x = self.norm(x)
+        return x
+
+    def forward(self, x: torch.Tensor, epoch: int= 0) -> torch.Tensor:
+        x = self.forward_features(x, epoch)
+        x = self.forward_head(x)
         return x
                 
     def reparam(self):

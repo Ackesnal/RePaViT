@@ -39,8 +39,8 @@ class Mlp(nn.Module):
         
         ######################## ↓↓↓↓↓↓ ########################
         # Self-attention projections
-        self.ffn1 = nn.Linear(self.dim_in, self.dim_hidden, bias=bias)
-        self.ffn2 = nn.Linear(self.dim_hidden, self.dim_out, bias=bias)
+        self.ffn1 = nn.Linear(self.dim_in, self.dim_hidden)
+        self.ffn2 = nn.Linear(self.dim_hidden, self.dim_out)
         self.act = act_layer()
         ######################## ↑↑↑↑↑↑ ########################
         
@@ -240,18 +240,6 @@ class WindowAttention(nn.Module):
         attn = self.attn_drop(attn)
 
         x = (attn @ v).transpose(1, 2).reshape(B_, N, C)
-        
-        """
-        relative_position_bias = self.relative_position_bias_table[self.relative_position_index.view(-1)].view(
-            self.window_size[0] * self.window_size[1], self.window_size[0] * self.window_size[1], -1)  # Wh*Ww,Wh*Ww,nH
-        relative_position_bias = relative_position_bias.permute(2, 0, 1).unsqueeze(0).expand(B_, -1, -1, -1)  # num_windows*B, nH, Wh*Ww, Wh*Ww
-        if mask is not None:
-            mask = mask.unsqueeze(1).unsqueeze(0).expand(B_//mask.shape[0], -1, self.num_heads, -1, -1).reshape(B_, self.num_heads, N, N)
-            relative_position_bias = relative_position_bias + mask
-        
-        x = nn.functional.scaled_dot_product_attention(q, k, v, attn_mask = relative_position_bias)
-        x = x.transpose(1, 2).reshape(B_, N, C)
-        """
         
         x = self.proj(x)
         x = self.proj_drop(x)
