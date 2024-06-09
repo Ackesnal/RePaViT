@@ -239,10 +239,7 @@ class Attention(nn.Module):
             q, k, v = qkv[0], qkv[1], qkv[2]
             
             # Self-attention
-            attn = torch.matmul(q, k.transpose(-1,-2))
-            attn = attn.softmax(-1)
-            x = torch.matmul(attn, v)
-            #x = nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop)
+            x = nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop)
                 
             # Reshape x back to input shape
             x = rearrange(x, 'b nh n hc -> b n (nh hc)')
