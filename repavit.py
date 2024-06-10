@@ -42,8 +42,8 @@ class Mlp(nn.Module):
         
         ######################## ↓↓↓↓↓↓ ########################
         # Self-attention projections
-        self.ffn1 = nn.Linear(self.dim_in, self.dim_hidden, bias=bias)
-        self.ffn2 = nn.Linear(self.dim_hidden, self.dim_out, bias=bias)
+        self.fc1 = nn.Linear(self.dim_in, self.dim_hidden, bias=bias)
+        self.fc2 = nn.Linear(self.dim_hidden, self.dim_out, bias=bias)
         self.act = act_layer()
         ######################## ↑↑↑↑↑↑ ########################
         
@@ -92,11 +92,18 @@ class Mlp(nn.Module):
             pass
         
         # FFN in
-        x = self.ffn1(x) # B, N, 4C
+        x = self.fc1(x) # B, N, 4C
         
         # Activation
         if self.channel_idle:
-            act_channels = int((1 - (epoch+1) / 300)*3*C + C)
+            if epoch < 50:
+                act_channels = 4*C
+            elif epoch < 100:
+                act_channels = 3*C
+            elif epoch < 150:
+                act_channels = 2*C
+            else:
+                act_channels = C
             mask = torch.zeros_like(x, dtype=torch.bool)
             mask[:, :, :act_channels] = True
             x = torch.where(mask, self.act(x), x)
@@ -112,7 +119,7 @@ class Mlp(nn.Module):
             pass
             
         # FFN out
-        x = self.ffn2(x)
+        x = self.fc2(x)
         
         # Add Layer Scale (dim)
         if self.layer_scale:
@@ -236,7 +243,7 @@ class Attention(nn.Module):
             # Project to QKV
             qkv = self.qkv(x)
             qkv = rearrange(qkv, 'b n (k nh hc) -> k b nh n hc', k=3, nh=self.num_head)
-            q, k, v = qkv[0], qkv[1], qkv[2]
+            q, k, v = qkv.unbind()
             
             # Self-attention
             x = nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop)
