@@ -660,7 +660,7 @@ class SwinTransformer(nn.Module):
         x = torch.flatten(x, 1)
         return x
 
-    def forward(self, x, epoch=0):
+    def forward(self, x):
         x = self.forward_features(x)
         x = self.head(x)
         return x

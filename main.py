@@ -32,6 +32,7 @@ from ptflops import get_model_complexity_info
 
 import repavit
 import repaswin
+import repapoolformer
 
 
 def get_args_parser():
