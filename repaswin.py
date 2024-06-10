@@ -635,7 +635,11 @@ class SwinTransformer(nn.Module):
 
     @torch.jit.ignore
     def no_weight_decay(self):
-        return {'absolute_pos_embed'}
+        no_weight_decay_list = set()
+        for name, param in self.named_parameters():
+            if "relative_position_bias_table" in name or 'absolute_pos_embed' in name:
+                no_weight_decay_list.add(name)
+        return no_weight_decay_list
 
     @torch.jit.ignore
     def no_weight_decay_keywords(self):
@@ -655,7 +659,7 @@ class SwinTransformer(nn.Module):
         x = torch.flatten(x, 1)
         return x
 
-    def forward(self, x):
+    def forward(self, x, epoch=0):
         x = self.forward_features(x)
         x = self.head(x)
         return x
