@@ -226,10 +226,10 @@ def objective(trial):
         args.lr = trial.suggest_float('lr', 1e-4, 1e-2)
         args.min_lr = trial.suggest_float('min_lr', 5e-7, 5e-5)
         args.weight_decay = trial.suggest_float('weight_decay', 0.005, 0.2)
-        args.drop_path = trial.suggest_float('drop_path', 0.01, 0.2)
+        args.drop_path = trial.suggest_float('drop_path', 0.01, 0.3)
         args.warmup_epochs = 20
         args.shortcut_gain = 1.0
-        args.opt = "lamb"
+        args.opt = trial.suggest_categorical('opt', ["lamb", "adamw", "nadamw"])
         if args.layer_scale:
             args.init_values = trial.suggest_float('init_values', 0.0, 1e-4)
         config = {"opt": args.opt,
