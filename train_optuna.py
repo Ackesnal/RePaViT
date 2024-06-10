@@ -618,7 +618,7 @@ if __name__ == '__main__':
                 print(args.study_name, storage_url)
                 study = optuna.create_study(study_name=args.study_name, storage=f"sqlite:///{args.study_name}.db",
                                             direction='maximize', sampler=optuna.samplers.TPESampler(), 
-                                            pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=200,
+                                            pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=250,
                                                                                interval_steps=5, n_min_trials=3)
                                             )
             else:
@@ -627,7 +627,7 @@ if __name__ == '__main__':
                 restored_sampler = pickle.load(open(f"{args.study_name}.pkl", "rb"))
                 study = optuna.create_study(study_name=args.study_name, storage=f"sqlite:///{args.study_name}.db",
                                             sampler=restored_sampler, load_if_exists=True,
-                                            pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=200,
+                                            pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=250,
                                                                                interval_steps=5, n_min_trials=3),
                                             )
                 
