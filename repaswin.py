@@ -39,14 +39,15 @@ class Mlp(nn.Module):
         
         ######################## ↓↓↓↓↓↓ ########################
         # Self-attention projections
-        self.ffn1 = nn.Linear(self.dim_in, self.dim_hidden)
-        self.ffn2 = nn.Linear(self.dim_hidden, self.dim_out)
+        self.fc1 = nn.Linear(self.dim_in, self.dim_hidden)
+        self.fc2 = nn.Linear(self.dim_hidden, self.dim_out)
         self.act = act_layer()
         ######################## ↑↑↑↑↑↑ ########################
         
         ######################## ↓↓↓↓↓↓ ########################
         # Channel-idle
         self.channel_idle = channel_idle
+        self.act_channels = dim_in
         ######################## ↑↑↑↑↑↑ ########################
         
         ######################## ↓↓↓↓↓↓ ########################
@@ -75,12 +76,12 @@ class Mlp(nn.Module):
             x = self.norm1(x.transpose(-1,-2)).transpose(-1, -2)
         
         # FFN in
-        x = self.ffn1(x) # B, N, 4C
+        x = self.fc1(x) # B, N, 4C
         
         # Activation
         if self.channel_idle:
             mask = torch.zeros_like(x, dtype=torch.bool)
-            mask[:, :, :C] = True
+            mask[:, :, :self.act_channels] = True
             x = torch.where(mask, self.act(x), x)
         else:
             x = self.act(x)
@@ -90,7 +91,7 @@ class Mlp(nn.Module):
             x = self.norm2(x.transpose(-1,-2)).transpose(-1, -2)
             
         # FFN out
-        x = self.ffn2(x)
+        x = self.fc2(x)
         
         # Add DropPath
         x = self.drop_path(x) if self.drop_path is not None else x

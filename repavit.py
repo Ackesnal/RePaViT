@@ -50,6 +50,7 @@ class Mlp(nn.Module):
         ######################## ↓↓↓↓↓↓ ########################
         # Channel-idle
         self.channel_idle = channel_idle
+        self.act_channels = dim_in
         ######################## ↑↑↑↑↑↑ ########################
         
         ######################## ↓↓↓↓↓↓ ########################
@@ -96,16 +97,8 @@ class Mlp(nn.Module):
         
         # Activation
         if self.channel_idle:
-            if epoch < 50:
-                act_channels = 4*C
-            elif epoch < 100:
-                act_channels = 3*C
-            elif epoch < 150:
-                act_channels = 2*C
-            else:
-                act_channels = C
             mask = torch.zeros_like(x, dtype=torch.bool)
-            mask[:, :, :act_channels] = True
+            mask[:, :, :self.act_channels] = True
             x = torch.where(mask, self.act(x), x)
         else:
             x = self.act(x)
