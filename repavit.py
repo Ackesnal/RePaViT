@@ -20,7 +20,7 @@ class Mlp(nn.Module):
             dim_in,
             dim_hidden=None,
             dim_out=None,
-            bias=False,
+            bias=True,
             drop_path=0.,
             use_conv=False,
             channel_idle=False,
@@ -77,7 +77,7 @@ class Mlp(nn.Module):
             self.ls = nn.Parameter(torch.ones((self.dim_out)) * init_values)
         ######################## ↑↑↑↑↑↑ ########################
         
-    def forward(self, x, epoch: int= 0):
+    def forward(self, x):
         B, N, C = x.shape
         ######################## ↓↓↓ 2-layer MLP ↓↓↓ ########################
         shortcut = x # B, N, C
@@ -434,9 +434,9 @@ class RePaBlock(nn.Module):
                            act_layer=act_layer, drop_path=drop_path, 
                            layer_scale=layer_scale, init_values=init_values)
     
-    def forward(self, x, epoch: int= 0):
+    def forward(self, x):
         x = self.attn(x)
-        x = self.mlp(x, epoch)
+        x = self.mlp(x)
         return x
     
     def reparam(self):
@@ -558,24 +558,6 @@ class RePaViT(VisionTransformer):
                     # param.data.mul_(0.67*math.pow(12, -0.25))
                 elif "bias" in name:
                     nn.init.constant_(param, 0.0)
-                
-    def forward_features(self, x: torch.Tensor, epoch: int= 0) -> torch.Tensor:
-        x = self.patch_embed(x)
-        x = self._pos_embed(x)
-        x = self.patch_drop(x)
-        x = self.norm_pre(x)
-        if self.grad_checkpointing and not torch.jit.is_scripting():
-            x = checkpoint_seq(self.blocks, x, epoch)
-        else:
-            for blk in self.blocks:
-                x = blk(x, epoch)
-        x = self.norm(x)
-        return x
-
-    def forward(self, x: torch.Tensor, epoch: int= 0) -> torch.Tensor:
-        x = self.forward_features(x, epoch)
-        x = self.forward_head(x)
-        return x
                 
     def reparam(self):
         for blk in self.blocks:
