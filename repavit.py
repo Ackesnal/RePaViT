@@ -344,7 +344,7 @@ class Attention(nn.Module):
         return
 
 
-class RepAttention(nn.Module):
+class RePaAttention(nn.Module):
     def __init__(self, 
                  dim, 
                  num_head,
@@ -406,7 +406,7 @@ class RePaMlp(nn.Module):
         return x
         
 
-class RePaAttentionBlock(nn.Module):
+class RePaBlock(nn.Module):
     # taken from https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/vision_transformer.py
     def __init__(self, dim, num_head, mlp_ratio=4., bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., act_layer=nn.GELU, channel_idle=False, po_shortcut=False, 
@@ -474,7 +474,7 @@ class RePaAttentionBlock(nn.Module):
         """
 
 
-class NFTransformer(VisionTransformer):
+class RePaViT(VisionTransformer):
     def __init__(self,
             img_size=224,
             patch_size=16,
@@ -499,7 +499,7 @@ class NFTransformer(VisionTransformer):
             embed_layer=PatchEmbed,
             norm_layer=nn.LayerNorm,
             act_layer=nn.GELU,
-            block_fn=RePaAttentionBlock,
+            block_fn=RePaBlock,
             feature_norm='LayerNorm',
             channel_idle=False,
             po_shortcut=False,
@@ -592,37 +592,37 @@ class NFTransformer(VisionTransformer):
         
 @register_model
 def RePaViT_Tiny_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
-    model = NFTransformer(patch_size=16, embed_dim=192, depth=12, pre_norm=True,
-                          num_heads=3, mlp_ratio=4, qkv_bias=True, fc_norm=False,
-                          norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    model = RePaViT(patch_size=16, embed_dim=192, depth=12, pre_norm=True,
+                    num_heads=3, mlp_ratio=4, qkv_bias=True, fc_norm=False,
+                    norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
     
     
     
 @register_model
 def RePaViT_Small_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
-    model = NFTransformer(patch_size=16, embed_dim=384, depth=12, pre_norm=True,
-                          num_heads=6, mlp_ratio=4, qkv_bias=True, fc_norm=False,
-                          norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    model = RePaViT(patch_size=16, embed_dim=384, depth=12, pre_norm=True,
+                    num_heads=6, mlp_ratio=4, qkv_bias=True, fc_norm=False,
+                    norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
     
 @register_model
 def RePaViT_Base_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
-    model = NFTransformer(patch_size=16, embed_dim=768, depth=12, pre_norm=True,
-                          num_heads=12, mlp_ratio=4, qkv_bias=True, fc_norm=False,
-                          norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    model = RePaViT(patch_size=16, embed_dim=768, depth=12, pre_norm=True,
+                    num_heads=12, mlp_ratio=4, qkv_bias=True, fc_norm=False,
+                    norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
     
 @register_model
 def RePaViT_Large_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
-    model = NFTransformer(patch_size=16, embed_dim=1024, depth=24, pre_norm=True,
-                          num_heads=16, mlp_ratio=4, qkv_bias=True, fc_norm=False,
-                          norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    model = RePaViT(patch_size=16, embed_dim=1024, depth=24, pre_norm=True,
+                    num_heads=16, mlp_ratio=4, qkv_bias=True, fc_norm=False,
+                    norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
     
 @register_model
 def RePaViT_Huge_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
-    model = NFTransformer(patch_size=16, embed_dim=1280, depth=32, pre_norm=True,
-                          num_heads=16, mlp_ratio=4, qkv_bias=True, fc_norm=False,
-                          norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    model = RePaViT(patch_size=16, embed_dim=1280, depth=32, pre_norm=True,
+                    num_heads=16, mlp_ratio=4, qkv_bias=True, fc_norm=False,
+                    norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
