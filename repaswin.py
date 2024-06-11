@@ -103,7 +103,8 @@ class Mlp(nn.Module):
         return x
         
     def reparam(self):
-        return self.ffn1.weight, self.ffn1.bias
+        return self.fc1.weight, self.fc1.bias
+        
         
 
 class RePaMlp(nn.Module):
@@ -112,9 +113,9 @@ class RePaMlp(nn.Module):
         
         dim = weights.shape[1]
         # Hyperparameters
-        self.ffn1 = nn.Linear(dim, dim)
-        self.ffn2 = nn.Linear(dim, dim)
-        self.ffn3 = nn.Linear(dim, dim)
+        self.fc1 = nn.Linear(dim, dim)
+        self.fc2 = nn.Linear(dim, dim)
+        self.fc3 = nn.Linear(dim, dim)
         self.act = nn.GELU()
         
         #self.ffn1.weight.data = weights[0]
@@ -125,7 +126,7 @@ class RePaMlp(nn.Module):
         #self.ffn3.bias.data = biases[0]
         
     def forward(self, x):
-        x = self.ffn3(self.act(self.ffn2(x))) + self.ffn1(x)
+        x = self.fc3(self.act(self.fc2(x))) + self.fc1(x)
         return x
         
         

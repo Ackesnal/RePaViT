@@ -96,6 +96,7 @@ class Mlp(nn.Module):
         
         # Activation
         if self.channel_idle:
+            print("yes")
             mask = torch.zeros_like(x, dtype=torch.bool)
             mask[:,:self.act_channels, :, :] = True
             x = torch.where(mask, self.act(x), x)
@@ -104,6 +105,8 @@ class Mlp(nn.Module):
         
         # 2nd Feature normalization
         if self.feature_norm == "BatchNorm":
+        
+            print("no")
             x = self.norm2(x)
             
         # FFN out
@@ -149,6 +152,7 @@ class PatchEmbed(nn.Module):
         return x
 
 
+
 class LayerNormChannel(nn.Module):
     """
     LayerNorm only for Channel Dimension.
@@ -169,6 +173,7 @@ class LayerNormChannel(nn.Module):
         return x
 
 
+
 class GroupNorm(nn.GroupNorm):
     """
     Group Normalization with 1 group.
@@ -176,6 +181,7 @@ class GroupNorm(nn.GroupNorm):
     """
     def __init__(self, num_channels, **kwargs):
         super().__init__(1, num_channels, **kwargs)
+
 
 
 class Pooling(nn.Module):
@@ -190,6 +196,22 @@ class Pooling(nn.Module):
 
     def forward(self, x):
         return self.pool(x) - x
+
+
+
+class RePaMlp(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        
+        # Hyperparameters
+        self.fc1 = nn.Conv2d(dim, dim, 1)
+        self.fc2 = nn.Conv2d(dim, dim, 1)
+        self.fc3 = nn.Conv2d(dim, dim, 1)
+        self.act = nn.GELU()
+        
+    def forward(self, x):
+        x = self.fc3(self.act(self.fc2(x))) + self.fc1(x)
+        return x
 
 
 
@@ -214,7 +236,8 @@ class PoolFormerBlock(nn.Module):
                  channel_idle=False, feature_norm="LayerNorm"):
 
         super().__init__()
-
+        
+        self.dim = dim
         self.norm1 = norm_layer(dim)
         self.token_mixer = Pooling(pool_size=pool_size)
         mlp_hidden_dim = int(dim * mlp_ratio)
@@ -241,7 +264,13 @@ class PoolFormerBlock(nn.Module):
             x = x + self.drop_path(self.token_mixer(self.norm1(x)))
             x = self.mlp(x)
         return x
-
+        
+    def reparam(self):
+        del self.mlp
+        self.mlp = RePaMlp(self.dim)
+        return
+    
+    
 
 def basic_blocks(dim, index, layers, 
                  pool_size=3, mlp_ratio=4., 
@@ -268,6 +297,7 @@ def basic_blocks(dim, index, layers,
     blocks = nn.Sequential(*blocks)
 
     return blocks
+
 
 
 class PoolFormer(nn.Module):
@@ -449,6 +479,13 @@ class PoolFormer(nn.Module):
         cls_out = self.head(x.mean([-2, -1]))
         # for image classification
         return cls_out
+    
+    def reparam(self):
+        for block in self.network:
+            if not isinstance(block, PatchEmbed):
+                for blk in block:
+                    blk.reparam()
+
 
 
 model_urls = {
@@ -460,8 +497,9 @@ model_urls = {
 }
 
 
+
 @register_model
-def poolformer_s12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+def RePaPoolformer_s12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     """
     PoolFormer-S12 model, Params: 12M
     --layers: [x,x,x,x], numbers of layers for the four stages
@@ -481,7 +519,7 @@ def poolformer_s12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay
 
 
 @register_model
-def poolformer_s24(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+def RePaPoolformer_s24(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     """
     PoolFormer-S24 model, Params: 21M
     """
@@ -497,7 +535,7 @@ def poolformer_s24(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay
 
 
 @register_model
-def poolformer_s36(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+def RePaPoolformer_s36(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     """
     PoolFormer-S36 model, Params: 31M
     """
@@ -514,7 +552,7 @@ def poolformer_s36(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay
 
 
 @register_model
-def poolformer_m36(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+def RePaPoolformer_m36(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     """
     PoolFormer-M36 model, Params: 56M
     """
@@ -527,16 +565,11 @@ def poolformer_m36(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay
         mlp_ratios=mlp_ratios, downsamples=downsamples, 
         layer_scale_init_value=1e-6, 
         **kwargs)
-    model.default_cfg = default_cfgs['poolformer_m']
-    if pretrained:
-        url = model_urls['poolformer_m36']
-        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu", check_hash=True)
-        model.load_state_dict(checkpoint)
     return model
 
 
 @register_model
-def poolformer_m48(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+def RePaPoolformer_m48(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     """
     PoolFormer-M48 model, Params: 73M
     """
@@ -549,9 +582,4 @@ def poolformer_m48(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay
         mlp_ratios=mlp_ratios, downsamples=downsamples, 
         layer_scale_init_value=1e-6, 
         **kwargs)
-    model.default_cfg = default_cfgs['poolformer_m']
-    if pretrained:
-        url = model_urls['poolformer_m48']
-        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu", check_hash=True)
-        model.load_state_dict(checkpoint)
     return model

@@ -455,8 +455,6 @@ def main(args):
         args.lr = args.lr * args.accumulation_steps
         args.warmup_lr = args.warmup_lr * args.accumulation_steps
         args.min_lr = args.min_lr * args.accumulation_steps
-        args.step_on_epochs = False
-        args.sched_on_updates = True
         args.updates_per_epoch = len(data_loader_train)//args.accumulation_steps
         
     optimizer = create_optimizer(args, model_without_ddp)

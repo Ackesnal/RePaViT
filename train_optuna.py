@@ -222,7 +222,7 @@ def objective(trial):
     torch.cuda.empty_cache()
     
     if args.rank == 0:
-        args.batch_size = trial.suggest_categorical('batch_size', [1024, 2048, 3072, 4096]) // args.world_size
+        args.batch_size = trial.suggest_categorical('batch_size', [1024, 2048, 3072, 4096]) // args.world_size // args.accumulation_steps
         args.lr = trial.suggest_float('lr', 1e-4, 1e-2)
         args.min_lr = trial.suggest_float('min_lr', 5e-7, 5e-5)
         args.weight_decay = trial.suggest_float('weight_decay', 0.005, 0.2)
@@ -265,7 +265,7 @@ def objective(trial):
             "epochs": args.epochs,
             "layer_scale": args.layer_scale,
             "init_values": args.init_values,
-            "batch_size": args.batch_size * args.world_size,
+            "batch_size": args.batch_size * args.world_size * args.accumulation_steps,
             "drop_path": args.drop_path,
         }
         print("\nOptuna searched configuration:", config)
@@ -424,8 +424,6 @@ def objective(trial):
         args.lr = args.lr * args.accumulation_steps
         args.warmup_lr = args.warmup_lr * args.accumulation_steps
         args.min_lr = args.min_lr * args.accumulation_steps
-        args.step_on_epochs = False
-        args.sched_on_updates = True
         args.updates_per_epoch = len(data_loader_train)//args.accumulation_steps
         
     optimizer = create_optimizer(args, model_without_ddp)
