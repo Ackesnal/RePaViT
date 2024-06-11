@@ -617,7 +617,7 @@ if __name__ == '__main__':
                 study = optuna.create_study(study_name=args.study_name, storage=f"sqlite:///{args.study_name}.db",
                                             direction='maximize', sampler=optuna.samplers.TPESampler(), 
                                             pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=250,
-                                                                               interval_steps=5, n_min_trials=3)
+                                                                               interval_steps=10, n_min_trials=3)
                                             )
             else:
                 assert args.study_name is not None, "Must resume optuna study with a study name"
@@ -626,7 +626,7 @@ if __name__ == '__main__':
                 study = optuna.create_study(study_name=args.study_name, storage=f"sqlite:///{args.study_name}.db",
                                             sampler=restored_sampler, load_if_exists=True,
                                             pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=250,
-                                                                               interval_steps=5, n_min_trials=3),
+                                                                               interval_steps=10, n_min_trials=3),
                                             )
                 
             study.optimize(objective, n_trials=args.optuna_ntrials)
