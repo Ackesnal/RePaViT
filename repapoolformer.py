@@ -96,7 +96,6 @@ class Mlp(nn.Module):
         
         # Activation
         if self.channel_idle:
-            print("yes")
             mask = torch.zeros_like(x, dtype=torch.bool)
             mask[:,:self.act_channels, :, :] = True
             x = torch.where(mask, self.act(x), x)
@@ -105,8 +104,6 @@ class Mlp(nn.Module):
         
         # 2nd Feature normalization
         if self.feature_norm == "BatchNorm":
-        
-            print("no")
             x = self.norm2(x)
             
         # FFN out
