@@ -8,12 +8,13 @@ This repository contains PyTorch evaluation code, training code and pretrained m
 First, clone the repository locally:
 ```
 git clone https://github.com/Ackesnal/RePaViT.git
+cd RePaViT
 ```
 Then, install environments via Anaconda:
 ```
 conda create -n repavit python=3.8.13 -y
 conda activate repavit
-conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
+conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia -y
 pip install timm==1.0.3 einops ptflops 
 ```
 After the above installations, it is ready to run this repo. 
