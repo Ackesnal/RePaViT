@@ -584,7 +584,7 @@ def main(args):
             "opt": args.opt,
             "weight-decay": args.weight_decay,
             "epochs": args.epochs,
-            "batch_size": args.batch_size*args.accumulation_steps,
+            "batch_size": args.batch_size*args.accumulation_steps*args.world_size,
             "drop_path": args.drop_path,
             }, 
             mode=os.environ['WANDB_MODE']
