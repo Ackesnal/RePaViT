@@ -60,9 +60,6 @@ class Mlp(nn.Module):
         elif self.feature_norm == "BatchNorm":
             self.norm1 = nn.BatchNorm1d(self.dim_in)
             self.norm2 = nn.BatchNorm1d(self.dim_hidden)
-        elif self.feature_norm == "EmpiricalSTD":
-            self.std1 = nn.Parameter(torch.ones((1))*std)
-            self.std2 = nn.Parameter(torch.ones((1))*std)
         ######################## ↑↑↑↑↑↑ ########################
         
         ######################## ↓↓↓↓↓↓ ########################
@@ -87,10 +84,6 @@ class Mlp(nn.Module):
             x = self.norm(x)
         elif self.feature_norm == "BatchNorm":
             x = self.norm1(x.transpose(-1,-2)).transpose(-1, -2)
-        elif self.feature_norm == "EmpiricalSTD":
-            x = x / self.std1.unsqueeze(0).unsqueeze(-1)
-        else:
-            pass
         
         # FFN in
         x = self.fc1(x) # B, N, 4C
@@ -106,18 +99,14 @@ class Mlp(nn.Module):
         # 2nd Feature normalization
         if self.feature_norm == "BatchNorm":
             x = self.norm2(x.transpose(-1,-2)).transpose(-1, -2)
-        elif self.feature_norm == "EmpiricalSTD":
-            x = x / self.std2.unsqueeze(0).unsqueeze(-1)
-        else:
-            pass
             
         # FFN out
         x = self.fc2(x)
         
         # Add Layer Scale (dim)
         if self.layer_scale:
-            x = x * self.ls
-        
+            x = x * self.ls.unsqueeze(0).unsqueeze(0)
+            
         # Add DropPath
         x = self.drop_path(x) if self.drop_path is not None else x
         
@@ -128,8 +117,28 @@ class Mlp(nn.Module):
         return x
         
     def reparam(self):
+        self.eval()
+        with torch.no_grad():
+            mean = self.norm1.running_mean
+            std = torch.sqrt(self.norm1.running_var + self.norm1.eps)
+            weight = self.norm1.weight
+            bias = self.norm1.bias
+            
+            fc1_bias = self.fc1(-mean/std*weight+bias)
+            fc1_weight = self.fc1.weight / std[None, :] * weight[None, :]
+            
+            mean = self.norm2.running_mean
+            std = torch.sqrt(self.norm2.running_var + self.norm2.eps)
+            weight = self.norm2.weight
+            bias = self.norm2.bias
+            
+            fc2_bias = self.fc2(-mean/std*weight+bias)
+            fc2_weight = self.fc2.weight / std[None, :] * weight[None, :]
+            
+            if self.layer_scale:
+                fc2_weight = fc2_weight * self.ls[:, None]
         
-        return self.ffn1.weight, self.ffn1.bias
+        return fc1_bias, fc1_weight, fc2_bias, fc2_weight
         
         
         
@@ -375,31 +384,43 @@ class RePaAttention(nn.Module):
         return self.out(x) + shortcut
 
 
+
 class RePaMlp(nn.Module):
-    def __init__(self, weights, biases):
+    def __init__(self, 
+                 fc1_bias, 
+                 fc1_weight, 
+                 fc2_bias, 
+                 fc2_weight, 
+                 act_layer):
         super().__init__()
         
-        dim = weights.shape[1]
-        # Hyperparameters
-        self.ffn1 = nn.Linear(dim, dim)
-        self.ffn2 = nn.Linear(dim, dim)
-        self.ffn3 = nn.Linear(dim, dim)
-        self.act = nn.GELU()
+        dim = fc1_weight.shape[1]
+        self.fc1 = nn.Linear(dim, dim)
+        self.fc2 = nn.Linear(dim, dim)
+        self.fc3 = nn.Linear(dim, dim, bias=False)
+        self.act = act_layer()
         
-        #self.ffn1.weight.data = weights[0]
-        #self.ffn1.bias.data = biases[0]
-        #self.ffn2.weight.data = weights[0]
-        #self.ffn2.bias.data = biases[0]
-        #self.ffn3.weight.data = weights[0]
-        #self.ffn3.bias.data = biases[0]
-
+        with torch.no_grad():
+            weight1 = fc1_weight[dim:, :].T @ fc2_weight[:, dim:].T + torch.eye(dim)
+            weight2 = fc1_weight[:dim, :]
+            weight3 = fc2_weight[:, :dim] 
+            bias1 = (fc1_bias[dim:].unsqueeze(0) @ fc2_weight[:, dim:].T).squeeze() + fc2_bias
+            bias2 = fc1_bias[:dim]
+            
+            self.fc1.weight.copy_(weight1.T)
+            self.fc1.bias.copy_(bias1)
+            self.fc2.weight.copy_(weight2)
+            self.fc2.bias.copy_(bias2)
+            self.fc3.weight.copy_(weight3)
         
     def forward(self, x):
-        x = self.ffn3(self.act(self.ffn2(x))) + self.ffn1(x)
-        return x
+        with torch.no_grad():
+            x = self.fc3(self.act(self.fc2(x))) + self.fc1(x)
+            return x
+            
         
 
-class RePaBlock(nn.Module):
+class Block(nn.Module):
     # taken from https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/vision_transformer.py
     def __init__(self, dim, num_head, mlp_ratio=4., bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., act_layer=nn.GELU, channel_idle=False, po_shortcut=False, 
@@ -413,6 +434,7 @@ class RePaBlock(nn.Module):
         self.rep = False
         self.dim = dim
         self.num_head = num_head
+        self.act_layer = act_layer
         
         if po_shortcut:
             self.attn = Attention(dim=dim, num_head=num_head, bias=bias, qk_scale=qk_scale, 
@@ -440,34 +462,14 @@ class RePaBlock(nn.Module):
         return x
     
     def reparam(self):
-        weights, biases = self.mlp.reparam()
+        fc1_bias, fc1_weight, fc2_bias, fc2_weight = self.mlp.reparam()
         del self.mlp
-        self.mlp = RePaMlp(weights, biases)
+        self.mlp = RePaMlp(fc1_bias, fc1_weight, fc2_bias, fc2_weight, self.act_layer)
         return
-        """
-        if self.affected_layers == "FFN":
-            self.mlp = RepMlp(self.dim)
-            self.attn = RepAttention(self.dim, self.num_head, None, None, None, None, None, None) #q_weight, k_weight, v_weight, q_bias, k_bias, v_bias)
-            return
-        elif self.affected_layers == "MHSA":
-            self.attn = RepAttention(self.dim, self.num_head, None, None, None, None, None, None) #q_weight, k_weight, v_weight, q_bias, k_bias, v_bias)
-            return
-        elif self.affected_layers == "Both":
-            self.attn = RepAttention(self.dim, self.num_head, None, None, None, None, None, None) #q_weight, k_weight, v_weight, q_bias, k_bias, v_bias)
-            return
-            
-        #q_weight, k_weight, v_weight, q_bias, k_bias, v_bias = self.attn.reparam()
-        #ffn_weight, ffn_bias = self.mlp.reparam()
-        #v_weight = ffn_weight @ v_weight
-        #v_bias = nn.functional.linear(v_bias.unsqueeze(0), ffn_weight, ffn_bias).squeeze()
-        self.rep = True
-        del self.attn
-        del self.mlp
-        self.attn = RepAttention(self.dim, self.num_head, None, None, None, None, None, None) #q_weight, k_weight, v_weight, q_bias, k_bias, v_bias)
-        """
+        
 
 
-class RePaViT(VisionTransformer):
+class Transformer(VisionTransformer):
     def __init__(self,
             img_size=224,
             patch_size=16,
@@ -492,7 +494,7 @@ class RePaViT(VisionTransformer):
             embed_layer=PatchEmbed,
             norm_layer=nn.LayerNorm,
             act_layer=nn.GELU,
-            block_fn=RePaBlock,
+            block_fn=Block,
             feature_norm='LayerNorm',
             channel_idle=False,
             po_shortcut=False,
@@ -567,37 +569,37 @@ class RePaViT(VisionTransformer):
         
 @register_model
 def RePaViT_Tiny_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
-    model = RePaViT(patch_size=16, embed_dim=192, depth=12, pre_norm=True,
-                    num_heads=3, mlp_ratio=4, qkv_bias=True, fc_norm=False,
-                    norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    model = Transformer(patch_size=16, embed_dim=192, depth=12, pre_norm=True,
+                        num_heads=3, mlp_ratio=4, qkv_bias=True, fc_norm=False,
+                        norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
     
     
     
 @register_model
 def RePaViT_Small_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
-    model = RePaViT(patch_size=16, embed_dim=384, depth=12, pre_norm=True,
-                    num_heads=6, mlp_ratio=4, qkv_bias=True, fc_norm=False,
-                    norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    model = Transformer(patch_size=16, embed_dim=384, depth=12, pre_norm=True,
+                        num_heads=6, mlp_ratio=4, qkv_bias=True, fc_norm=False,
+                        norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
     
 @register_model
 def RePaViT_Base_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
-    model = RePaViT(patch_size=16, embed_dim=768, depth=12, pre_norm=True,
-                    num_heads=12, mlp_ratio=4, qkv_bias=True, fc_norm=False,
-                    norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    model = Transformer(patch_size=16, embed_dim=768, depth=12, pre_norm=True,
+                        num_heads=12, mlp_ratio=4, qkv_bias=True, fc_norm=False,
+                        norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
     
 @register_model
 def RePaViT_Large_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
-    model = RePaViT(patch_size=16, embed_dim=1024, depth=24, pre_norm=True,
-                    num_heads=16, mlp_ratio=4, qkv_bias=True, fc_norm=False,
-                    norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    model = Transformer(patch_size=16, embed_dim=1024, depth=24, pre_norm=True,
+                        num_heads=16, mlp_ratio=4, qkv_bias=True, fc_norm=False,
+                        norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
     
 @register_model
 def RePaViT_Huge_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
-    model = RePaViT(patch_size=16, embed_dim=1280, depth=32, pre_norm=True,
-                    num_heads=16, mlp_ratio=4, qkv_bias=True, fc_norm=False,
-                    norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    model = Transformer(patch_size=16, embed_dim=1280, depth=32, pre_norm=True,
+                        num_heads=16, mlp_ratio=4, qkv_bias=True, fc_norm=False,
+                        norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model

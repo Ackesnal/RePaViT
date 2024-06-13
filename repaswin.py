@@ -103,31 +103,60 @@ class Mlp(nn.Module):
         return x
         
     def reparam(self):
-        return self.fc1.weight, self.fc1.bias
+        self.eval()
+        with torch.no_grad():
+            mean = self.norm1.running_mean
+            std = torch.sqrt(self.norm1.running_var + self.norm1.eps)
+            weight = self.norm1.weight
+            bias = self.norm1.bias
+            
+            fc1_bias = self.fc1(-mean/std*weight+bias)
+            fc1_weight = self.fc1.weight / std[None, :] * weight[None, :]
+            
+            mean = self.norm2.running_mean
+            std = torch.sqrt(self.norm2.running_var + self.norm2.eps)
+            weight = self.norm2.weight
+            bias = self.norm2.bias
+            
+            fc2_bias = self.fc2(-mean/std*weight+bias)
+            fc2_weight = self.fc2.weight / std[None, :] * weight[None, :]
+        
+        return fc1_bias, fc1_weight, fc2_bias, fc2_weight
         
         
 
 class RePaMlp(nn.Module):
-    def __init__(self, weights, biases):
+    def __init__(self, 
+                 fc1_bias, 
+                 fc1_weight, 
+                 fc2_bias, 
+                 fc2_weight, 
+                 act_layer):
         super().__init__()
         
-        dim = weights.shape[1]
-        # Hyperparameters
+        dim = fc1_weight.shape[1]
         self.fc1 = nn.Linear(dim, dim)
         self.fc2 = nn.Linear(dim, dim)
-        self.fc3 = nn.Linear(dim, dim)
-        self.act = nn.GELU()
+        self.fc3 = nn.Linear(dim, dim, bias=False)
+        self.act = act_layer()
         
-        #self.ffn1.weight.data = weights[0]
-        #self.ffn1.bias.data = biases[0]
-        #self.ffn2.weight.data = weights[0]
-        #self.ffn2.bias.data = biases[0]
-        #self.ffn3.weight.data = weights[0]
-        #self.ffn3.bias.data = biases[0]
+        with torch.no_grad():
+            weight1 = fc1_weight[dim:, :].T @ fc2_weight[:, dim:].T + torch.eye(dim)
+            weight2 = fc1_weight[:dim, :]
+            weight3 = fc2_weight[:, :dim] 
+            bias1 = (fc1_bias[dim:].unsqueeze(0) @ fc2_weight[:, dim:].T).squeeze() + fc2_bias
+            bias2 = fc1_bias[:dim]
+            
+            self.fc1.weight.copy_(weight1.T)
+            self.fc1.bias.copy_(bias1)
+            self.fc2.weight.copy_(weight2)
+            self.fc2.bias.copy_(bias2)
+            self.fc3.weight.copy_(weight3)
         
     def forward(self, x):
-        x = self.fc3(self.act(self.fc2(x))) + self.fc1(x)
-        return x
+        with torch.no_grad():
+            x = self.fc3(self.act(self.fc2(x))) + self.fc1(x)
+            return x
         
         
         
@@ -280,6 +309,7 @@ class SwinTransformerBlock(nn.Module):
         self.window_size = window_size
         self.shift_size = shift_size
         self.mlp_ratio = mlp_ratio
+        self.act_layer = act_layer
         if min(self.input_resolution) <= self.window_size:
             # if window size is larger than input resolution, we don't partition windows
             self.shift_size = 0
@@ -378,9 +408,9 @@ class SwinTransformerBlock(nn.Module):
         return x
         
     def reparam(self):
-        weights, biases = self.mlp.reparam()
+        fc1_bias, fc1_weight, fc2_bias, fc2_weight = self.mlp.reparam()
         del self.mlp
-        self.mlp = RePaMlp(weights, biases)
+        self.mlp = RePaMlp(fc1_bias, fc1_weight, fc2_bias, fc2_weight, self.act_layer)
         return
 
 
@@ -655,7 +685,7 @@ class SwinTransformer(nn.Module):
 
         for layer in self.layers:
             x = layer(x)
-
+        
         x = self.norm(x)  # B L C
         x = self.avgpool(x.transpose(1, 2))  # B C 1
         x = torch.flatten(x, 1)
@@ -673,7 +703,7 @@ class SwinTransformer(nn.Module):
 
     
 @register_model
-def RePaSwin_Tiny_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+def RePaSwin_Tiny(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     model = SwinTransformer(img_size=224, patch_size=4, in_chans=3,
                             embed_dim=96, depths=[2, 2, 6, 2], num_heads=[3, 6, 12, 24],
                             window_size=7, mlp_ratio=4., qkv_bias=True, qk_scale=None,
@@ -682,7 +712,7 @@ def RePaSwin_Tiny_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pre
     return model
     
 @register_model
-def RePaSwin_Small_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+def RePaSwin_Small(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     model = SwinTransformer(img_size=224, patch_size=4, in_chans=3,
                             embed_dim=96, depths=[2, 2, 18, 2], num_heads=[3, 6, 12, 24],
                             window_size=7, mlp_ratio=4., qkv_bias=True, qk_scale=None,
@@ -691,7 +721,7 @@ def RePaSwin_Small_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pr
     return model
     
 @register_model
-def RePaSwin_Base_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+def RePaSwin_Base(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     model = SwinTransformer(img_size=224, patch_size=4, in_chans=3,
                             embed_dim=128, depths=[2, 2, 18, 2], num_heads=[4, 8, 16,32],
                             window_size=7, mlp_ratio=4., qkv_bias=True, qk_scale=None,

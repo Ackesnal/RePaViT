@@ -34,46 +34,46 @@ class Mlp(nn.Module):
             
         super().__init__()
         
-        ######################## ?????? ########################
+        ######################## ↓↓↓↓↓↓ ########################
         # Hyperparameters
         self.dim_in = dim_in
         self.dim_hidden = dim_hidden or dim_in
         self.dim_out = dim_out or dim_in
-        ######################## ?????? ########################
+        ######################## ↑↑↑↑↑↑ ########################
         
-        ######################## ?????? ########################
+        ######################## ↓↓↓↓↓↓ ########################
         # Self-attention projections
         self.fc1 = nn.Conv2d(self.dim_in, self.dim_hidden, 1)
         self.fc2 = nn.Conv2d(self.dim_hidden, self.dim_out, 1)
         self.act = act_layer()
-        ######################## ?????? ########################
+        ######################## ↑↑↑↑↑↑ ########################
         
-        ######################## ?????? ########################
+        ######################## ↓↓↓↓↓↓ ########################
         # Channel-idle
         self.channel_idle = channel_idle
         self.act_channels = dim_in
-        ######################## ?????? ########################
+        ######################## ↑↑↑↑↑↑ ########################
         
-        ######################## ?????? ########################
+        ######################## ↓↓↓↓↓↓ ########################
         self.feature_norm = feature_norm
         if self.feature_norm == "LayerNorm":
             self.norm1 = nn.GroupNorm(1, self.dim_in)
         elif self.feature_norm == "BatchNorm":
             self.norm1 = nn.BatchNorm2d(self.dim_in)
             self.norm2 = nn.BatchNorm2d(self.dim_hidden)
-        ######################## ?????? ########################
+        ######################## ↑↑↑↑↑↑ ########################
         
-        ######################## ?????? ########################
+        ######################## ↓↓↓↓↓↓ ########################
         # Drop path
         self.drop_path = DropPath(drop_path) if drop_path > 0. else None
-        ######################## ?????? ########################
+        ######################## ↑↑↑↑↑↑ ########################
             
-        ######################## ?????? ########################
+        ######################## ↓↓↓↓↓↓ ########################
         # Layer Scale
         self.layer_scale = layer_scale
         if self.layer_scale:
             self.ls = nn.Parameter(torch.ones((self.dim_out)) * init_values)
-        ######################## ?????? ########################
+        ######################## ↑↑↑↑↑↑ ########################
         
         self.apply(self._init_weights)
     
@@ -85,7 +85,7 @@ class Mlp(nn.Module):
         
     def forward(self, x, epoch: int= 0):
         B, C, H, W = x.shape
-        ######################## ??? 2-layer MLP ??? ########################
+        ######################## ↓↓↓ 2-layer MLP ↓↓↓ ########################
         shortcut = x # B, N, C
         
         # 1st Feature normalization
@@ -117,13 +117,69 @@ class Mlp(nn.Module):
         x = self.drop_path(x) if self.drop_path is not None else x
         
         x = x + shortcut
-        ######################## ??? 2-layer MLP ??? ########################
+        ######################## ↑↑↑ 2-layer MLP ↑↑↑ ########################
         #if x.get_device() == 0:
             #print("x after ffn:", x.std(-1).mean().item(), x.mean().item(), x.max().item(), x.min().item())
         return x
         
     def reparam(self):
-        return self.fc1.weight, self.fc1.bias
+        with torch.no_grad():
+            mean = self.norm1.running_mean
+            std = torch.sqrt(self.norm1.running_var + self.norm1.eps)
+            weight = self.norm1.weight
+            bias = self.norm1.bias
+        
+            fc1_bias = self.fc1((-mean/std*weight+bias)[None, :, None, None]).squeeze()
+            fc1_weight = (self.fc1.weight / std[None, :, None, None] * weight[None, :, None, None]).squeeze()
+                    
+            mean = self.norm2.running_mean
+            std = torch.sqrt(self.norm2.running_var + self.norm2.eps)
+            weight = self.norm2.weight
+            bias = self.norm2.bias
+                    
+            fc2_bias = self.fc2((-mean/std*weight+bias)[None, :, None, None]).squeeze()
+            fc2_weight = (self.fc2.weight / std[None, :, None, None] * weight[None, :, None, None]).squeeze()
+            
+            if self.layer_scale:
+                fc2_weight = fc2_weight * self.ls[:, None]
+
+        return fc1_bias, fc1_weight, fc2_bias, fc2_weight
+
+
+
+class RePaMlp(nn.Module):
+    def __init__(self, 
+                 fc1_bias, 
+                 fc1_weight, 
+                 fc2_bias, 
+                 fc2_weight, 
+                 act_layer):
+        super().__init__()
+        
+        dim = fc1_weight.shape[1]
+        # Hyperparameters
+        self.fc1 = nn.Conv2d(dim, dim, 1)
+        self.fc2 = nn.Conv2d(dim, dim, 1)
+        self.fc3 = nn.Conv2d(dim, dim, 1, bias=False)
+        self.act = act_layer()
+        
+        with torch.no_grad():
+            weight1 = fc1_weight[dim:, :].T @ fc2_weight[:, dim:].T + torch.eye(dim)
+            weight2 = fc1_weight[:dim, :]
+            weight3 = fc2_weight[:, :dim] 
+            bias1 = (fc1_bias[dim:].unsqueeze(0) @ fc2_weight[:, dim:].T).squeeze() + fc2_bias
+            bias2 = fc1_bias[:dim]
+            
+            self.fc1.weight.copy_(weight1.T[:, :, None, None])
+            self.fc1.bias.copy_(bias1)
+            self.fc2.weight.copy_(weight2[:, :, None, None])
+            self.fc2.bias.copy_(bias2)
+            self.fc3.weight.copy_(weight3[:, :, None, None])
+        
+    def forward(self, x):
+        with torch.no_grad():
+            x = self.fc3(self.act(self.fc2(x))) + self.fc1(x)
+            return x
         
         
         
@@ -196,22 +252,6 @@ class Pooling(nn.Module):
 
 
 
-class RePaMlp(nn.Module):
-    def __init__(self, dim):
-        super().__init__()
-        
-        # Hyperparameters
-        self.fc1 = nn.Conv2d(dim, dim, 1)
-        self.fc2 = nn.Conv2d(dim, dim, 1)
-        self.fc3 = nn.Conv2d(dim, dim, 1)
-        self.act = nn.GELU()
-        
-    def forward(self, x):
-        x = self.fc3(self.act(self.fc2(x))) + self.fc1(x)
-        return x
-
-
-
 class PoolFormerBlock(nn.Module):
     """
     Implementation of one PoolFormer block.
@@ -235,6 +275,7 @@ class PoolFormerBlock(nn.Module):
         super().__init__()
         
         self.dim = dim
+        self.act_layer = act_layer
         self.norm1 = norm_layer(dim)
         self.token_mixer = Pooling(pool_size=pool_size)
         mlp_hidden_dim = int(dim * mlp_ratio)
@@ -263,8 +304,9 @@ class PoolFormerBlock(nn.Module):
         return x
         
     def reparam(self):
+        fc1_bias, fc1_weight, fc2_bias, fc2_weight = self.mlp.reparam()
         del self.mlp
-        self.mlp = RePaMlp(self.dim)
+        self.mlp = RePaMlp(fc1_bias, fc1_weight, fc2_bias, fc2_weight, self.act_layer)
         return
     
     
@@ -469,6 +511,7 @@ class PoolFormer(nn.Module):
         x = self.forward_embeddings(x)
         # through backbone
         x = self.forward_tokens(x)
+        print(x[0,0])
         if self.fork_feat:
             # otuput features of four stages for dense prediction
             return x

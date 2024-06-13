@@ -405,17 +405,18 @@ def main(args):
                 p.requires_grad = False
         except:
             print('no patch embed')
-    
-    
-    if args.reparam:
-        print("Reparametering the backbone ...")
-        model.reparam()
-        print("...")
-        print("Reparameterization done!")
-        
+            
     model.to(device)
     
     if args.test_speed:
+        if args.reparam:
+            print("Reparametering the backbone ...")
+            model.eval()
+            model.reparam()
+            print("...")
+            model.train()
+            print("Reparameterization done!")
+            
         # test model throughput for three times to ensure accuracy
         print('Start inference speed testing...')
         inference_speed = speed_test(model)
@@ -521,6 +522,14 @@ def main(args):
                 loss_scaler.load_state_dict(checkpoint['scaler'])
         lr_scheduler.step(args.start_epoch*len(data_loader_train))
     
+    if args.reparam:
+        print("Reparametering the backbone ...")
+        model.eval()
+        model.reparam()
+        print("...")
+        model.train()
+        print("Reparameterization done!")
+        
     if args.eval:
         MACs = get_macs(model)
         test_stats = evaluate(data_loader_val, model, device)
@@ -531,7 +540,6 @@ def main(args):
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
     max_accuracy = 0.0
-    
     
     if args.rank == 0 and args.use_wandb:
         name = args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_"
