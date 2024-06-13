@@ -139,7 +139,42 @@ class Mlp(nn.Module):
                 fc2_weight = fc2_weight * self.ls[:, None]
         
         return fc1_bias, fc1_weight, fc2_bias, fc2_weight
+
+
+
+class RePaMlp(nn.Module):
+    def __init__(self, 
+                 fc1_bias, 
+                 fc1_weight, 
+                 fc2_bias, 
+                 fc2_weight, 
+                 act_layer):
+        super().__init__()
         
+        dim = fc1_weight.shape[1]
+        self.fc1 = nn.Linear(dim, dim)
+        self.fc2 = nn.Linear(dim, dim)
+        self.fc3 = nn.Linear(dim, dim, bias=False)
+        self.act = act_layer()
+        
+        with torch.no_grad():
+            weight1 = fc1_weight[dim:, :].T @ fc2_weight[:, dim:].T + torch.eye(dim).to(fc1_weight.device)
+            weight2 = fc1_weight[:dim, :]
+            weight3 = fc2_weight[:, :dim] 
+            bias1 = (fc1_bias[dim:].unsqueeze(0) @ fc2_weight[:, dim:].T).squeeze() + fc2_bias
+            bias2 = fc1_bias[:dim]
+            
+            self.fc1.weight.copy_(weight1.T)
+            self.fc1.bias.copy_(bias1)
+            self.fc2.weight.copy_(weight2)
+            self.fc2.bias.copy_(bias2)
+            self.fc3.weight.copy_(weight3)
+        
+    def forward(self, x):
+        with torch.no_grad():
+            x = self.fc3(self.act(self.fc2(x))) + self.fc1(x)
+            return x
+                    
         
         
 class Attention(nn.Module):
@@ -346,6 +381,7 @@ class Attention(nn.Module):
         return
 
 
+
 class RePaAttention(nn.Module):
     def __init__(self, 
                  dim, 
@@ -382,41 +418,6 @@ class RePaAttention(nn.Module):
         
         # x = self.ffn3(self.act(self.ffn2(x))) + self.ffn1(x)
         return self.out(x) + shortcut
-
-
-
-class RePaMlp(nn.Module):
-    def __init__(self, 
-                 fc1_bias, 
-                 fc1_weight, 
-                 fc2_bias, 
-                 fc2_weight, 
-                 act_layer):
-        super().__init__()
-        
-        dim = fc1_weight.shape[1]
-        self.fc1 = nn.Linear(dim, dim)
-        self.fc2 = nn.Linear(dim, dim)
-        self.fc3 = nn.Linear(dim, dim, bias=False)
-        self.act = act_layer()
-        
-        with torch.no_grad():
-            weight1 = fc1_weight[dim:, :].T @ fc2_weight[:, dim:].T + torch.eye(dim)
-            weight2 = fc1_weight[:dim, :]
-            weight3 = fc2_weight[:, :dim] 
-            bias1 = (fc1_bias[dim:].unsqueeze(0) @ fc2_weight[:, dim:].T).squeeze() + fc2_bias
-            bias2 = fc1_bias[:dim]
-            
-            self.fc1.weight.copy_(weight1.T)
-            self.fc1.bias.copy_(bias1)
-            self.fc2.weight.copy_(weight2)
-            self.fc2.bias.copy_(bias2)
-            self.fc3.weight.copy_(weight3)
-        
-    def forward(self, x):
-        with torch.no_grad():
-            x = self.fc3(self.act(self.fc2(x))) + self.fc1(x)
-            return x
             
         
 

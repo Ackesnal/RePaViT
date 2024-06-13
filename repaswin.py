@@ -141,7 +141,7 @@ class RePaMlp(nn.Module):
         self.act = act_layer()
         
         with torch.no_grad():
-            weight1 = fc1_weight[dim:, :].T @ fc2_weight[:, dim:].T + torch.eye(dim)
+            weight1 = fc1_weight[dim:, :].T @ fc2_weight[:, dim:].T + torch.eye(dim).to(fc1_weight.device)
             weight2 = fc1_weight[:dim, :]
             weight3 = fc2_weight[:, :dim] 
             bias1 = (fc1_bias[dim:].unsqueeze(0) @ fc2_weight[:, dim:].T).squeeze() + fc2_bias

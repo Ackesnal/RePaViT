@@ -164,7 +164,7 @@ class RePaMlp(nn.Module):
         self.act = act_layer()
         
         with torch.no_grad():
-            weight1 = fc1_weight[dim:, :].T @ fc2_weight[:, dim:].T + torch.eye(dim)
+            weight1 = fc1_weight[dim:, :].T @ fc2_weight[:, dim:].T + torch.eye(dim).to(fc1_weight.device)
             weight2 = fc1_weight[:dim, :]
             weight3 = fc2_weight[:, :dim] 
             bias1 = (fc1_bias[dim:].unsqueeze(0) @ fc2_weight[:, dim:].T).squeeze() + fc2_bias
@@ -511,7 +511,6 @@ class PoolFormer(nn.Module):
         x = self.forward_embeddings(x)
         # through backbone
         x = self.forward_tokens(x)
-        print(x[0,0])
         if self.fork_feat:
             # otuput features of four stages for dense prediction
             return x

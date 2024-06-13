@@ -511,6 +511,18 @@ def main(args):
                 args.resume, map_location='cpu', check_hash=True)
         else:
             checkpoint = torch.load(args.resume, map_location='cpu')
+        
+        """
+        all_keys = list(checkpoint['model'].keys())
+        for key in all_keys:
+            if "ffn" in key:
+                new_key = key.replace("ffn", "fc")
+                checkpoint['model'][new_key] = checkpoint['model'][key]
+                del checkpoint['model'][key]
+            if "gain" in key:
+                del checkpoint['model'][key]
+        """
+            
         model_without_ddp.load_state_dict(checkpoint['model'])
         if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
             optimizer.load_state_dict(checkpoint['optimizer'])
@@ -522,15 +534,21 @@ def main(args):
                 loss_scaler.load_state_dict(checkpoint['scaler'])
         lr_scheduler.step(args.start_epoch*len(data_loader_train))
     
-    if args.reparam:
-        print("Reparametering the backbone ...")
-        model.eval()
-        model.reparam()
-        print("...")
-        model.train()
-        print("Reparameterization done!")
-        
     if args.eval:
+        if args.reparam:
+            print("Reparametering the backbone ...")
+            model_without_ddp.eval()
+            model_without_ddp.reparam()
+            print("...")
+            model_without_ddp.to(device)
+            print("...")
+            if args.distributed:
+                model = torch.nn.parallel.DistributedDataParallel(model_without_ddp, device_ids=[args.gpu])
+            else:
+                model = model_without_ddp
+            model.train()
+            print("Reparameterization done!")
+        
         MACs = get_macs(model)
         test_stats = evaluate(data_loader_val, model, device)
         print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
