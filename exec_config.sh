@@ -57,6 +57,7 @@ export MASTER_ADDR=$(scontrol show hostname $SLURM_NODELIST | head -n 1)
 #WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env main.py --batch-size=$BATCH_SIZE --output_dir=output/RePaSwin_Tiny_patch16_224_layer12 --dist-eval \
 #--model=RePaSwin_Tiny_patch16_224_layer12 \
 #--data-path /scratch/itee/uqxxu16/data/imagenet \
+#--feature_norm=BatchNorm \
 #--lr=1e-3 \
 #--min-lr=1e-5 \
 #--clip-grad=5.0 \
@@ -95,15 +96,16 @@ WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLUR
 --accumulation-steps=2 \
 --model=RePaPoolformer_s12 \
 --data-path=/scratch/itee/uqxxu16/data/imagenet \
---lr=5e-3 \
---min-lr=2.5e-6 \
---warmup-lr=1e-6 \
+--feature_norm=BatchNorm \
+--lr=6.5e-3 \
+--min-lr=1.5e-6 \
+--warmup-lr=5e-7 \
 --warmup-epochs=20 \
 --unscale-lr \
---weight-decay=0.12 \
+--weight-decay=0.1207 \
 --opt=lamb \
 --num_workers=30 \
---drop-path=0.06 \
+--drop-path=0.06039 \
 --use_wandb \
 --wandb_suffix=300Epochs \
 --color-jitter=0.4 \
