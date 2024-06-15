@@ -6,8 +6,8 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:tesla-smx2:1
 #SBATCH --mem-per-cpu=2G
-#SBATCH -o RePaSwin_Tiny_patch16_224_layer12_ChannelIdle_Optuna_out.txt
-#SBATCH -e RePaSwin_Tiny_patch16_224_layer12_ChannelIdle_Optuna_err.txt
+#SBATCH -o RePaPoolformer_s24_ChannelIdle_Optuna_out.txt
+#SBATCH -e RePaPoolformer_s24_ChannelIdle_Optuna_err.txt
 
 export WORLD_SIZE=$(($SLURM_NNODES * $SLURM_NTASKS_PER_NODE))
 export MASTER_PORT=12777

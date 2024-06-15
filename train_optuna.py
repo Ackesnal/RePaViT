@@ -223,12 +223,12 @@ def objective(trial):
     
     if args.rank == 0:
         args.batch_size = trial.suggest_categorical('batch_size', [1024, 2048, 3072, 4096]) // args.world_size // args.accumulation_steps
-        args.lr = trial.suggest_float('lr', 1e-4, 1e-2)
-        args.min_lr = trial.suggest_float('min_lr', 5e-7, 5e-5)
+        args.lr = trial.suggest_float('lr', 1e-4, 1.5e-2) / args.accumulation_steps
+        args.min_lr = trial.suggest_float('min_lr', 5e-7, 5e-5) / args.accumulation_steps
+        args.warmup_lr = args.warmup_lr / args.accumulation_steps
         args.weight_decay = trial.suggest_float('weight_decay', 0.005, 0.2)
         args.drop_path = trial.suggest_float('drop_path', 0.01, 0.3)
         args.warmup_epochs = 20
-        args.shortcut_gain = 1.0
         args.opt = trial.suggest_categorical('opt', ["lamb", "adamw", "nadamw"])
         if args.layer_scale:
             args.init_values = trial.suggest_float('init_values', 0.0, 1e-4)
@@ -239,7 +239,6 @@ def objective(trial):
                   "warmup_epochs": args.warmup_epochs,
                   "weight_decay": args.weight_decay,
                   "drop_path": args.drop_path,
-                  "shortcut_gain": args.shortcut_gain,
                   "init_values": args.init_values}
         args.unscale_lr = True
         torch.distributed.broadcast_object_list([config], src=0)
@@ -249,16 +248,14 @@ def objective(trial):
             name = name + "ChannelIdle" + "_"
         if args.po_shortcut:
             name = name + "POShortcut" + "_"
-        name = name + "Gain" + str(round(args.shortcut_gain, 1)) + "_"
         name = name + str(random.randint(0, 10000))
         config={
             "model": args.model,
             "layer": "FFN" if args.channel_idle and not args.po_shortcut else "MHSA" if not args.channel_idle and args.po_shortcut else "Both" if args.channel_idle and args.po_shortcut else "None",
-            "shortcut_gain": args.shortcut_gain,
             "norm_type": args.feature_norm,
-            "lr": args.lr,
-            "min-lr": args.min_lr,
-            "warmup-lr": args.warmup_lr,
+            "lr": args.lr * args.accumulation_steps,
+            "min-lr": args.min_lr * args.accumulation_steps,
+            "warmup-lr": args.warmup_lr * args.accumulation_steps,
             "warmup-epoch": args.warmup_epochs,
             "opt": args.opt,
             "weight-decay": args.weight_decay,
@@ -293,7 +290,6 @@ def objective(trial):
         args.min_lr = config["min_lr"]
         args.warmup_epochs = config["warmup_epochs"]
         args.weight_decay = config["weight_decay"]
-        args.shortcut_gain = config["shortcut_gain"]
         args.drop_path = config["drop_path"]
         args.batch_size = config["batch_size"]
         args.init_values = config["init_values"]
