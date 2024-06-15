@@ -4,10 +4,10 @@
 #SBATCH --job-name=train
 #SBATCH --partition=gpu
 #SBATCH --cpus-per-task=32
-#SBATCH --gres=gpu:tesla-smx2:1
+#SBATCH --gres=gpu:1
 #SBATCH --mem-per-cpu=2G
-#SBATCH -o RePaPoolformer_s24_out.txt
-#SBATCH -e RePaPoolformer_s24_err.txt
+#SBATCH -o RePaPoolformer_s12_out.txt
+#SBATCH -e RePaPoolformer_s12_err.txt
 
 export WORLD_SIZE=$(($SLURM_NNODES * $SLURM_NTASKS_PER_NODE))
 export MASTER_PORT=14444
@@ -94,20 +94,21 @@ export MASTER_ADDR=$(scontrol show hostname $SLURM_NODELIST | head -n 1)
 #--wandb_suffix=full_300epoch
 
 export BATCH_SIZE=$(echo "scale=0; 2048 / $WORLD_SIZE" | bc)
-WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env main.py --batch-size=$BATCH_SIZE --output_dir=output/RePaPoolformer_s24 --dist-eval \
+WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env main.py --batch-size=$BATCH_SIZE --output_dir=output/RePaPoolformer_s12 --dist-eval \
 --accumulation-steps=2 \
---model=RePaPoolformer_s24 \
+--model=RePaPoolformer_s12 \
 --data-path=/scratch/itee/uqxxu16/data/imagenet \
 --feature_norm=BatchNorm \
+--channel_idle \
 --lr=6.5e-3 \
 --min-lr=1.5e-6 \
 --warmup-lr=5e-7 \
 --warmup-epochs=20 \
 --unscale-lr \
---weight-decay=0.1 \
+--weight-decay=0.1207 \
 --opt=lamb \
 --num_workers=30 \
---drop-path=0.1 \
+--drop-path=0.06039 \
 --use_wandb \
 --wandb_suffix=300Epochs \
 --color-jitter=0.4 \

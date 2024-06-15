@@ -565,7 +565,6 @@ def main(args):
             name = name + "ChannelIdle" + "_"
         if args.po_shortcut:
             name = name + "POShortcut" + "_"
-        name = name + "Gain" + str(round(args.shortcut_gain, 1)) + "_"
         name = name + str(random.randint(0, 10000))
         wandb.init(
             # set the wandb project where this run will be logged
