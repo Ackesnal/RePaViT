@@ -130,4 +130,3 @@ WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLUR
 --drop-path=0.06 \
 --use_wandb \
 --wandb_suffix=300Epochs \
---color-jitter=0.4 \
