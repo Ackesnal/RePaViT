@@ -12,10 +12,10 @@ cd RePaViT
 ```
 Then, install environments via Anaconda:
 ```
-conda create -n repavit python=3.8.13 -y
+conda create -n repavit python=3.10.14 -y
 conda activate repavit
 conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia -y
-pip install timm==1.0.3 einops ptflops 
+pip install timm==1.0.3 einops ptflops wandb optuna
 ```
 After the above installations, it is ready to run this repo. 
 
