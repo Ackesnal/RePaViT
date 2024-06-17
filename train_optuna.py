@@ -224,8 +224,8 @@ def objective(trial):
     
     if args.rank == 0:
         args.batch_size = trial.suggest_categorical('batch_size', [1024, 2048, 3072, 4096]) // args.world_size // args.accumulation_steps
-        args.lr = trial.suggest_float('lr', 1e-4, 1.5e-2) / args.accumulation_steps
-        args.min_lr = trial.suggest_float('min_lr', 5e-7, 5e-5) / args.accumulation_steps
+        args.lr = trial.suggest_float('lr', 1e-4, 1e-2) / args.accumulation_steps
+        args.min_lr = trial.suggest_float('min_lr', 1e-7, 1e-5) / args.accumulation_steps
         args.warmup_lr = args.warmup_lr / args.accumulation_steps
         args.weight_decay = trial.suggest_float('weight_decay', 0.005, 0.2)
         args.drop_path = trial.suggest_float('drop_path', 0.01, 0.3)
