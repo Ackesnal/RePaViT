@@ -223,14 +223,14 @@ def objective(trial):
     torch.cuda.empty_cache()
     
     if args.rank == 0:
-        args.batch_size = trial.suggest_categorical('batch_size', [1024, 2048, 3072, 4096]) // args.world_size // args.accumulation_steps
+        args.batch_size = trial.suggest_categorical('batch_size', [128,256]) // args.world_size // args.accumulation_steps
         args.lr = trial.suggest_float('lr', 1e-4, 1e-2) / args.accumulation_steps
         args.min_lr = trial.suggest_float('min_lr', 1e-7, 1e-5) / args.accumulation_steps
         args.warmup_lr = args.warmup_lr / args.accumulation_steps
         args.weight_decay = trial.suggest_float('weight_decay', 0.005, 0.2)
         args.drop_path = trial.suggest_float('drop_path', 0.01, 0.3)
         args.warmup_epochs = 20
-        args.opt = trial.suggest_categorical('opt', ["lamb", "adamw", "nadamw"])
+        args.opt = "lamb"
         if args.layer_scale:
             args.init_values = trial.suggest_float('init_values', 0.0, 1e-4)
         config = {"opt": args.opt,
@@ -244,12 +244,6 @@ def objective(trial):
         args.unscale_lr = True
         torch.distributed.broadcast_object_list([config], src=0)
         
-        name = args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_"
-        if args.channel_idle:
-            name = name + "ChannelIdle" + "_"
-        if args.po_shortcut:
-            name = name + "POShortcut" + "_"
-        name = name + str(random.randint(0, 10000))
         config={
             "model": args.model,
             "layer": "FFN" if args.channel_idle and not args.po_shortcut else "MHSA" if not args.channel_idle and args.po_shortcut else "Both" if args.channel_idle and args.po_shortcut else "None",
@@ -267,18 +261,6 @@ def objective(trial):
             "drop_path": args.drop_path,
         }
         print("\nOptuna searched configuration:", config)
-        print()
-        
-        run = wandb.init(
-            # set the wandb project where this run will be logged
-            project=args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_" + args.wandb_suffix,
-            name=name,
-            # track hyperparameters and run metadata
-            config=config, 
-            mode=os.environ['WANDB_MODE']
-        )
-        print("\nWandB ID:", run.id)
-        print("WandB Project:", run.project)
         print()
         
     else:
@@ -469,6 +451,51 @@ def objective(trial):
     criterion = DistillationLoss(criterion, teacher_model, args.distillation_type, 
                                  args.distillation_alpha, args.distillation_tau)
     
+    output_dir = Path(args.output_dir)
+    if args.resume_study:
+        checkpoint = torch.load(f"{output_dir}/{args.study_name}.pth", map_location='cpu')
+        model_without_ddp.load_state_dict(checkpoint['model'])
+        if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+            args.start_epoch = checkpoint['epoch'] + 1
+            if args.model_ema:
+                utils._load_checkpoint_for_ema(model_ema, checkpoint['model_ema'])
+            if 'scaler' in checkpoint:
+                loss_scaler.load_state_dict(checkpoint['scaler'])
+        lr_scheduler.step(args.start_epoch*len(data_loader_train))
+    
+    if args.rank == 0:
+        if args.resume_study:
+            run = wandb.init(
+                # set the wandb project where this run will be logged
+                project=args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_" + args.wandb_suffix,
+                name=checkpoint["wandb"]["name"],
+                # track hyperparameters and run metadata
+                config=config, 
+                mode=os.environ['WANDB_MODE'],
+                resume="allow",
+                id = checkpoint["wandb"]["id"]
+            )
+        else:
+            name = args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_"
+            if args.channel_idle:
+                name = name + "ChannelIdle" + "_"
+            if args.po_shortcut:
+                name = name + "POShortcut" + "_"
+            name = name + str(random.randint(0, 10000))
+            run = wandb.init(
+                # set the wandb project where this run will be logged
+                project=args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_" + args.wandb_suffix,
+                name=name,
+                # track hyperparameters and run metadata
+                config=config, 
+                mode=os.environ['WANDB_MODE']
+            )
+        print("\nWandB ID:", run.id)
+        print("WandB Project:", run.project)
+        print()
+        
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
     max_accuracy = 0.0
@@ -529,6 +556,20 @@ def objective(trial):
             max_accuracy = test_stats["acc1"]
         print(f'Max accuracy: {max_accuracy:.2f}%')
         
+        if args.output_dir and args.rank == 0:
+            checkpoint_paths = [output_dir / f"{args.study_name}.pth"]
+            for checkpoint_path in checkpoint_paths:
+                utils.save_on_master({
+                    'model': model_without_ddp.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'lr_scheduler': lr_scheduler.state_dict(),
+                    'epoch': epoch,
+                    'model_ema': get_state_dict(model_ema),
+                    'scaler': loss_scaler.state_dict(),
+                    'args': args,
+                    'wandb': {"id": run.id, "name": run.name}
+                }, checkpoint_path)
+        
         if args.rank == 0:
             wandb.log({"accuracy": test_stats["acc1"]})
             # For early stop
@@ -574,7 +615,11 @@ def objective(trial):
         with open(f"{args.study_name}.pkl", "wb") as fout:
             pickle.dump(study.sampler, fout)
         wandb.finish()
-        
+    
+    if args.resume_study:
+        args.resume_study = False
+        args.start_epoch = 0
+            
     return max_accuracy
 
 
@@ -611,6 +656,12 @@ if __name__ == '__main__':
                     args.study_name = args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_optuna"
                 storage_url = f"sqlite:///{args.study_name}.db"
                 print(args.study_name, storage_url)
+                if os.path.exists(f"{args.study_name}.pkl"):
+                    os.remove(f"{args.study_name}.pkl")
+                    print(f"Existing sampler status {args.study_name}.pkl has been deleted.")
+                if os.path.exists(f"{args.study_name}.db"):
+                    os.remove(f"{args.study_name}.db")
+                    print(f"Existing study {args.study_name}.db has been deleted.")
                 study = optuna.create_study(study_name=args.study_name, storage=f"sqlite:///{args.study_name}.db",
                                             direction='maximize', sampler=optuna.samplers.TPESampler(), 
                                             pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=275,
@@ -618,10 +669,14 @@ if __name__ == '__main__':
                                             )
             else:
                 assert args.study_name is not None, "Must resume optuna study with a study name"
-                print(f"Resume the study {args.study_name}, from sqlite:///{args.study_name}.db")
-                restored_sampler = pickle.load(open(f"{args.study_name}.pkl", "rb"))
+                if os.path.exists(f"{args.study_name}.pkl"):
+                    print(f"Resume the study {args.study_name}, from sqlite:///{args.study_name}.db")
+                    restored_sampler = pickle.load(open(f"{args.study_name}.pkl", "rb"))
+                else:
+                    restored_sampler = None
                 study = optuna.create_study(study_name=args.study_name, storage=f"sqlite:///{args.study_name}.db",
-                                            sampler=restored_sampler, load_if_exists=True,
+                                            sampler=restored_sampler if restored_sampler else optuna.samplers.TPESampler(),
+                                            load_if_exists=True,
                                             pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=275,
                                                                                interval_steps=10, n_min_trials=3),
                                             )
