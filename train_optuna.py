@@ -223,12 +223,12 @@ def objective(trial):
     torch.cuda.empty_cache()
     
     if args.rank == 0:
-        args.batch_size = trial.suggest_categorical('batch_size', [128,256]) // args.world_size // args.accumulation_steps
+        args.batch_size = 256 // args.world_size // args.accumulation_steps
         args.lr = trial.suggest_float('lr', 1e-4, 1e-2) / args.accumulation_steps
         args.min_lr = trial.suggest_float('min_lr', 1e-7, 1e-5) / args.accumulation_steps
         args.warmup_lr = args.warmup_lr / args.accumulation_steps
         args.weight_decay = trial.suggest_float('weight_decay', 0.005, 0.2)
-        args.drop_path = trial.suggest_float('drop_path', 0.01, 0.3)
+        args.drop_path = trial.suggest_float('drop_path', 0.0, 0.3)
         args.warmup_epochs = 20
         args.opt = "lamb"
         if args.layer_scale:
@@ -452,7 +452,7 @@ def objective(trial):
                                  args.distillation_alpha, args.distillation_tau)
     
     output_dir = Path(args.output_dir)
-    if args.resume_study:
+    if args.resume_study and os.path.exists(f"{output_dir}/{args.study_name}.pth"):
         checkpoint = torch.load(f"{output_dir}/{args.study_name}.pth", map_location='cpu')
         model_without_ddp.load_state_dict(checkpoint['model'])
         if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
@@ -464,9 +464,8 @@ def objective(trial):
             if 'scaler' in checkpoint:
                 loss_scaler.load_state_dict(checkpoint['scaler'])
         lr_scheduler.step(args.start_epoch*len(data_loader_train))
-    
-    if args.rank == 0:
-        if args.resume_study:
+
+        if args.rank == 0:
             run = wandb.init(
                 # set the wandb project where this run will be logged
                 project=args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_" + args.wandb_suffix,
@@ -477,7 +476,11 @@ def objective(trial):
                 resume="allow",
                 id = checkpoint["wandb"]["id"]
             )
-        else:
+            print("\nWandB ID:", run.id)
+            print("WandB Project:", run.project)
+            print()
+    else:
+        if args.rank == 0:
             name = args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_"
             if args.channel_idle:
                 name = name + "ChannelIdle" + "_"
@@ -492,9 +495,9 @@ def objective(trial):
                 config=config, 
                 mode=os.environ['WANDB_MODE']
             )
-        print("\nWandB ID:", run.id)
-        print("WandB Project:", run.project)
-        print()
+            print("\nWandB ID:", run.id)
+            print("WandB Project:", run.project)
+            print()
         
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
@@ -654,32 +657,44 @@ if __name__ == '__main__':
             if not args.resume_study:
                 if args.study_name is None:
                     args.study_name = args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_optuna"
-                storage_url = f"sqlite:///{args.study_name}.db"
-                print(args.study_name, storage_url)
                 if os.path.exists(f"{args.study_name}.pkl"):
                     os.remove(f"{args.study_name}.pkl")
                     print(f"Existing sampler status {args.study_name}.pkl has been deleted.")
                 if os.path.exists(f"{args.study_name}.db"):
                     os.remove(f"{args.study_name}.db")
                     print(f"Existing study {args.study_name}.db has been deleted.")
+                    
+                storage_url = f"sqlite:///{args.study_name}.db"
+                print(f"\nCreate a new study {args.study_name} at {storage_url}\n")
                 study = optuna.create_study(study_name=args.study_name, storage=f"sqlite:///{args.study_name}.db",
                                             direction='maximize', sampler=optuna.samplers.TPESampler(), 
                                             pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=275,
                                                                                interval_steps=10, n_min_trials=3)
                                             )
             else:
-                assert args.study_name is not None, "Must resume optuna study with a study name"
-                if os.path.exists(f"{args.study_name}.pkl"):
-                    print(f"Resume the study {args.study_name}, from sqlite:///{args.study_name}.db")
-                    restored_sampler = pickle.load(open(f"{args.study_name}.pkl", "rb"))
+                if args.study_name is None:
+                    args.study_name = args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_optuna"
+                if os.path.exists(f"{args.study_name}.db"):
+                    if os.path.exists(f"{args.study_name}.pkl"):
+                        restored_sampler = pickle.load(open(f"{args.study_name}.pkl", "rb"))
+                    else:
+                        restored_sampler = None
+                    print(f"\nResume the existing study {args.study_name} from sqlite:///{args.study_name}.db\n")
+                    study = optuna.create_study(study_name=args.study_name, storage=f"sqlite:///{args.study_name}.db",
+                                                sampler=restored_sampler if restored_sampler else optuna.samplers.TPESampler(),
+                                                load_if_exists=True,
+                                                pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=275,
+                                                                                   interval_steps=10, n_min_trials=3),
+                                                )
                 else:
-                    restored_sampler = None
-                study = optuna.create_study(study_name=args.study_name, storage=f"sqlite:///{args.study_name}.db",
-                                            sampler=restored_sampler if restored_sampler else optuna.samplers.TPESampler(),
-                                            load_if_exists=True,
-                                            pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=275,
-                                                                               interval_steps=10, n_min_trials=3),
-                                            )
+                    print(f"\nFailed to resume the existing study {args.study_name}")
+                    storage_url = f"sqlite:///{args.study_name}.db"
+                    print(f"Create a new study {args.study_name} at {storage_url}\n")
+                    study = optuna.create_study(study_name=args.study_name, storage=f"sqlite:///{args.study_name}.db",
+                                                direction='maximize', sampler=optuna.samplers.TPESampler(), 
+                                                pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=275,
+                                                                                   interval_steps=10, n_min_trials=3)
+                                                )
                 
             study.optimize(objective, n_trials=args.optuna_ntrials)
         else:
