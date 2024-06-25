@@ -223,7 +223,7 @@ def objective(trial):
     torch.cuda.empty_cache()
     
     if args.rank == 0:
-        args.batch_size = 256 // args.world_size // args.accumulation_steps
+        args.batch_size = 4096 // args.world_size // args.accumulation_steps
         args.lr = trial.suggest_float('lr', 1e-4, 1e-2) / args.accumulation_steps
         args.min_lr = trial.suggest_float('min_lr', 1e-7, 1e-5) / args.accumulation_steps
         args.warmup_lr = args.warmup_lr / args.accumulation_steps
