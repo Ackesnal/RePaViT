@@ -228,7 +228,7 @@ def objective(trial):
         args.min_lr = trial.suggest_float('min_lr', 1e-7, 1e-5) / args.accumulation_steps
         args.warmup_lr = args.warmup_lr / args.accumulation_steps
         args.weight_decay = trial.suggest_float('weight_decay', 0.005, 0.2)
-        args.drop_path = trial.suggest_float('drop_path', 0.0, 0.3)
+        args.drop_path = trial.suggest_float('drop_path', 0.0, 0.4)
         args.warmup_epochs = 20
         args.opt = "lamb"
         if args.layer_scale:
@@ -498,45 +498,15 @@ def objective(trial):
             print("\nWandB ID:", run.id)
             print("WandB Project:", run.project)
             print()
-        
+            
+    torch.distributed.barrier()
+    
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
     max_accuracy = 0.0
     
     nan_loss_flag = False
     for epoch in range(args.start_epoch, args.epochs):
-        if args.feature_norm == "EmpiricalSTD" and epoch == args.finetune_std:
-            for name, param in model.module.named_parameters():
-                if "std" in name:
-                    param.requires_grad_(True)
-                        
-            model_without_ddp = model.module
-            optimizer = create_optimizer(args, model_without_ddp)
-            loss_scaler = utils.NativeScalerWithGradNormCount()
-                            
-            lr_scheduler, num_epochs = create_scheduler_v2(
-                        optimizer,
-                        **scheduler_kwargs(args),
-                        updates_per_epoch=args.updates_per_epoch,
-            )
-            lr_scheduler.step(epoch*len(data_loader_train) // args.accumulation_steps)
-            
-        if (args.po_shortcut or args.channel_idle) and epoch == args.finetune_gain:
-            for name, param in model.module.named_parameters():
-                if "gain" in name:
-                    param.requires_grad_(True)
-                        
-            model_without_ddp = model.module
-            optimizer = create_optimizer(args, model_without_ddp)
-            loss_scaler = utils.NativeScalerWithGradNormCount()
-                            
-            lr_scheduler, num_epochs = create_scheduler_v2(
-                        optimizer,
-                        **scheduler_kwargs(args),
-                        updates_per_epoch=args.updates_per_epoch,
-            )
-            lr_scheduler.step(epoch*len(data_loader_train) // args.accumulation_steps)
-            
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
         
@@ -687,6 +657,7 @@ if __name__ == '__main__':
                                                                                    interval_steps=10, n_min_trials=3),
                                                 )
                 else:
+                    args.resume_study = False
                     print(f"\nFailed to resume the existing study {args.study_name}")
                     storage_url = f"sqlite:///{args.study_name}.db"
                     print(f"Create a new study {args.study_name} at {storage_url}\n")
