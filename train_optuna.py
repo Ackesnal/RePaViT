@@ -34,6 +34,7 @@ from engine import train_one_epoch, evaluate
 import repavit
 import repaswin
 import repapoolformer
+import repamlpmixer
 
 
 

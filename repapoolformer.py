@@ -283,7 +283,7 @@ class PoolFormerBlock(nn.Module):
                        act_layer=act_layer, drop_path=drop_path, 
                        channel_idle=channel_idle, feature_norm=feature_norm,
                        init_values=layer_scale_init_value, layer_scale=use_layer_scale)
-
+        
         # The following two techniques are useful to train deep PoolFormers.
         self.drop_path = DropPath(drop_path) if drop_path > 0. \
             else nn.Identity()
@@ -550,8 +550,9 @@ def RePaPoolformer_s12(pretrained=False, pretrained_cfg=None, pretrained_cfg_ove
     embed_dims = [64, 128, 320, 512]
     mlp_ratios = [4, 4, 4, 4]
     downsamples = [True, True, True, True]
+    pool_size = 3
     model = PoolFormer(
-        layers, embed_dims=embed_dims, 
+        layers, embed_dims=embed_dims, pool_size=pool_size,
         mlp_ratios=mlp_ratios, downsamples=downsamples,
         **kwargs)
     return model
@@ -567,7 +568,7 @@ def RePaPoolformer_s24(pretrained=False, pretrained_cfg=None, pretrained_cfg_ove
     mlp_ratios = [4, 4, 4, 4]
     downsamples = [True, True, True, True]
     model = PoolFormer(
-        layers, embed_dims=embed_dims, 
+        layers, embed_dims=embed_dims, pool_size=pool_size,
         mlp_ratios=mlp_ratios, downsamples=downsamples,
         **kwargs)
     return model
@@ -583,7 +584,7 @@ def RePaPoolformer_s36(pretrained=False, pretrained_cfg=None, pretrained_cfg_ove
     mlp_ratios = [4, 4, 4, 4]
     downsamples = [True, True, True, True]
     model = PoolFormer(
-        layers, embed_dims=embed_dims, 
+        layers, embed_dims=embed_dims, pool_size=pool_size,
         mlp_ratios=mlp_ratios, downsamples=downsamples,
         layer_scale_init_value=1e-6, 
         **kwargs)

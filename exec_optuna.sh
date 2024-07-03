@@ -13,29 +13,23 @@ export WORLD_SIZE=$(($SLURM_NNODES * $SLURM_NTASKS_PER_NODE))
 export MASTER_PORT=12777
 export MASTER_ADDR=$(scontrol show hostname $SLURM_NODELIST | head -n 1)
 
-# Poolformer s12
-#WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env train_optuna.py --data-path /scratch/itee/uqxxu16/data/imagenet --model RePaPoolformer_s12 --output_dir=output/optuna_optimization --feature_norm=BatchNorm --channel_idle --epochs=300 --use_wandb --wandb_no_loss --wandb_suffix=optuna --optuna_ntrials=20 --num_workers=28 --dist-eval
-
 # Poolformer s24
-WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env train_optuna.py --feature_norm=BatchNorm --channel_idle --epochs=300 --use_wandb --wandb_no_loss --wandb_suffix=optuna --optuna_ntrials=20 --num_workers=28 --dist-eval --resume_study --data-path /scratch/itee/uqxxu16/data/imagenet --output_dir=output/optuna_optimization --model=RePaPoolformer_s24 
+WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env train_optuna.py --feature_norm=BatchNorm --channel_idle --epochs=300 --use_wandb --wandb_no_loss --wandb_suffix=optuna --optuna_ntrials=20 --num_workers=28 --dist-eval --resume_study --data-path /scratch/itee/uqxxu16/data/imagenet --output_dir=output/optuna_optimization --model=RePaPoolformer_s24 --eval-crop-ratio=0.9
 
 # Poolformer s36
-#WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env train_optuna.py --data-path /scratch/itee/uqxxu16/data/imagenet --model RePaPoolformer_s36 --output_dir=output/optuna_optimization --feature_norm=BatchNorm --channel_idle --epochs=300 --use_wandb --wandb_no_loss --wandb_suffix=optuna --optuna_ntrials=20 --num_workers=28 --dist-eval
+WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env train_optuna.py --feature_norm=BatchNorm --channel_idle --epochs=300 --use_wandb --wandb_no_loss --wandb_suffix=optuna --optuna_ntrials=20 --num_workers=28 --dist-eval --resume_study --data-path /scratch/itee/uqxxu16/data/imagenet --output_dir=output/optuna_optimization --model=RePaPoolformer_s36 --eval-crop-ratio=0.9
 
-# DeiT/ViT Tiny
-#WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env train_optuna.py --data-path /scratch/itee/uqxxu16/data/imagenet --model RePaViT_Tiny_patch16_224_layer12 --output_dir=output/optuna_optimization --feature_norm=BatchNorm --channel_idle --epochs=300 --use_wandb --wandb_no_loss --wandb_suffix=optuna --optuna_ntrials=20 --study_name=repavit_tiny_study --num_workers=28 --dist-eval
+# MlpMixer s32
+WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env train_optuna.py --feature_norm=BatchNorm --channel_idle --epochs=300 --use_wandb --wandb_no_loss --wandb_suffix=optuna --optuna_ntrials=20 --num_workers=28 --dist-eval --resume_study --data-path /scratch/itee/uqxxu16/data/imagenet --output_dir=output/optuna_optimization --model=RePaMlpMixer_s32_224
 
-# DeiT/ViT Small
-#WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env train_optuna.py --data-path /scratch/itee/uqxxu16/data/imagenet --model RePaViT_Small_patch16_224_layer12 --output_dir=output/optuna_optimization --feature_norm=BatchNorm --epochs=300 --channel_idle --use_wandb --wandb_no_loss --wandb_suffix=optuna --optuna_ntrials=20 --study_name=repavit_small_study --num_workers=28 --dist-eval
+# MlpMixer s16
+WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env train_optuna.py --feature_norm=BatchNorm --channel_idle --epochs=300 --use_wandb --wandb_no_loss --wandb_suffix=optuna --optuna_ntrials=20 --num_workers=28 --dist-eval --resume_study --data-path /scratch/itee/uqxxu16/data/imagenet --output_dir=output/optuna_optimization --model=RePaMlpMixer_s16_224
 
-# DeiT/ViT Base
-#WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env train_optuna.py --data-path /scratch/itee/uqxxu16/data/imagenet --model RePaViT_Base_patch16_224_layer12 --output_dir=output/optuna_optimization --feature_norm=BatchNorm --channel_idle --epochs=300 --use_wandb --wandb_no_loss --wandb_suffix=optuna --optuna_ntrials=20 --study_name=repavit_base_study --num_workers=28 --dist-eval
+# MlpMixer b32
+WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env train_optuna.py --feature_norm=BatchNorm --channel_idle --epochs=300 --use_wandb --wandb_no_loss --wandb_suffix=optuna --optuna_ntrials=20 --num_workers=28 --dist-eval --resume_study --data-path /scratch/itee/uqxxu16/data/imagenet --output_dir=output/optuna_optimization --model=RePaMlpMixer_b32_224
 
-# Swin Tiny
-#WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env train_optuna.py --data-path /scratch/itee/uqxxu16/data/imagenet --model RePaSwin_Tiny --output_dir=output/optuna_optimization --feature_norm=BatchNorm --channel_idle --epochs=300 --use_wandb --wandb_no_loss --wandb_suffix=optuna --optuna_ntrials=20 --study_name=repaswin_tiny_study --num_workers=28 --dist-eval
-
-# Swin Small
-#WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env train_optuna.py --data-path /scratch/itee/uqxxu16/data/imagenet --model RePaSwin_Small --output_dir=output/optuna_optimization --feature_norm=BatchNorm --channel_idle --epochs=300 --use_wandb --wandb_no_loss --wandb_suffix=optuna --optuna_ntrials=20 --study_name=repaswin_small_study --num_workers=28 --dist-eval
+# MlpMixer b16
+WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env train_optuna.py --feature_norm=BatchNorm --channel_idle --epochs=300 --use_wandb --wandb_no_loss --wandb_suffix=optuna --optuna_ntrials=20 --num_workers=28 --dist-eval --resume_study --data-path /scratch/itee/uqxxu16/data/imagenet --output_dir=output/optuna_optimization --model=RePaMlpMixer_b16_224
 
 
 # WANDB_MODE=[online, offline, disabled] -> 设定是否要联网同步

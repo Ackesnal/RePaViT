@@ -33,6 +33,7 @@ from ptflops import get_model_complexity_info
 import repavit
 import repaswin
 import repapoolformer
+import repamlpmixer
 
 
 def get_args_parser():
