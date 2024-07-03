@@ -308,3 +308,21 @@ def RePaMlpMixer_b16_224(pretrained=False, pretrained_cfg=None, pretrained_cfg_o
     """
     model = RePaMlpMixer(patch_size=16, num_blocks=12, embed_dim=768, **kwargs)
     return model
+    
+    
+@register_model
+def RePaMlpMixer_l16_224(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+    """ Mixer-B/16 224x224. ImageNet-1k pretrained weights.
+    Paper:  'MLP-Mixer: An all-MLP Architecture for Vision' - https://arxiv.org/abs/2105.01601
+    """
+    model = RePaMlpMixer(patch_size=16, num_blocks=24, embed_dim=1024, **kwargs)
+    return model
+    
+    
+@register_model
+def RePaMlpMixer_l32_224(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+    """ Mixer-B/16 224x224. ImageNet-1k pretrained weights.
+    Paper:  'MLP-Mixer: An all-MLP Architecture for Vision' - https://arxiv.org/abs/2105.01601
+    """
+    model = RePaMlpMixer(patch_size=32, num_blocks=24, embed_dim=1024, **kwargs)
+    return model
