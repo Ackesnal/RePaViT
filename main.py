@@ -34,6 +34,7 @@ import repavit
 import repaswin
 import repapoolformer
 import repamlpmixer
+import repaemo
 
 
 def get_args_parser():

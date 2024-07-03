@@ -550,7 +550,7 @@ def RePaPoolformer_s12(pretrained=False, pretrained_cfg=None, pretrained_cfg_ove
     embed_dims = [64, 128, 320, 512]
     mlp_ratios = [4, 4, 4, 4]
     downsamples = [True, True, True, True]
-    pool_size = 3
+    pool_size = 7
     model = PoolFormer(
         layers, embed_dims=embed_dims, pool_size=pool_size,
         mlp_ratios=mlp_ratios, downsamples=downsamples,
@@ -567,6 +567,7 @@ def RePaPoolformer_s24(pretrained=False, pretrained_cfg=None, pretrained_cfg_ove
     embed_dims = [64, 128, 320, 512]
     mlp_ratios = [4, 4, 4, 4]
     downsamples = [True, True, True, True]
+    pool_size = 7
     model = PoolFormer(
         layers, embed_dims=embed_dims, pool_size=pool_size,
         mlp_ratios=mlp_ratios, downsamples=downsamples,
@@ -583,6 +584,7 @@ def RePaPoolformer_s36(pretrained=False, pretrained_cfg=None, pretrained_cfg_ove
     embed_dims = [64, 128, 320, 512]
     mlp_ratios = [4, 4, 4, 4]
     downsamples = [True, True, True, True]
+    pool_size = 7
     model = PoolFormer(
         layers, embed_dims=embed_dims, pool_size=pool_size,
         mlp_ratios=mlp_ratios, downsamples=downsamples,
@@ -600,6 +602,7 @@ def RePaPoolformer_m36(pretrained=False, pretrained_cfg=None, pretrained_cfg_ove
     embed_dims = [96, 192, 384, 768]
     mlp_ratios = [4, 4, 4, 4]
     downsamples = [True, True, True, True]
+    pool_size = 7
     model = PoolFormer(
         layers, embed_dims=embed_dims, 
         mlp_ratios=mlp_ratios, downsamples=downsamples, 
@@ -617,6 +620,7 @@ def RePaPoolformer_m48(pretrained=False, pretrained_cfg=None, pretrained_cfg_ove
     embed_dims = [96, 192, 384, 768]
     mlp_ratios = [4, 4, 4, 4]
     downsamples = [True, True, True, True]
+    pool_size = 7
     model = PoolFormer(
         layers, embed_dims=embed_dims, 
         mlp_ratios=mlp_ratios, downsamples=downsamples, 
