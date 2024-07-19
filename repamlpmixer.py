@@ -183,6 +183,8 @@ class MixerBlock(nn.Module):
         super().__init__()
         tokens_dim, channels_dim = [int(x * dim) for x in to_2tuple(mlp_ratio)]
         
+        self.act_layer = act_layer
+        
         self.mlp_tokens = mlp_layer(dim_in=seq_len, dim_hidden=tokens_dim, act_layer=act_layer, drop_path=drop_path)
         self.mlp_channels = mlp_layer(dim_in=dim, dim_hidden=channels_dim, act_layer=act_layer, drop_path=drop_path,
                                       feature_norm=feature_norm, channel_idle=channel_idle)
@@ -191,6 +193,12 @@ class MixerBlock(nn.Module):
         x = self.mlp_tokens(x.transpose(1, 2)).transpose(1, 2)
         x = self.mlp_channels(x)
         return x
+    
+    def reparam(self):
+        fc1_bias, fc1_weight, fc2_bias, fc2_weight = self.mlp_channels.reparam()
+        del self.mlp_channels
+        self.mlp_channels = RePaMlp(fc1_bias, fc1_weight, fc2_bias, fc2_weight, self.act_layer)
+        return
         
         
         
@@ -271,6 +279,10 @@ class RePaMlpMixer(MlpMixer):
         self.head = nn.Linear(embed_dim, self.num_classes) if num_classes > 0 else nn.Identity()
 
         self.init_weights(nlhb=nlhb)
+        
+    def reparam(self):
+        for blk in self.blocks:
+            blk.reparam()
 
 
 

@@ -234,7 +234,7 @@ def speed_test(model, ntest=100, batchsize=128, x=None, **kwargs):
         x = torch.rand(batchsize, 3, 224, 224).cuda()
     else:
         batchsize = x.shape[0]
-    model.eval()
+    model.eval().cuda()
 
     start = time.time()
     with torch.no_grad():
