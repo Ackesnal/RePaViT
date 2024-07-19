@@ -26,7 +26,8 @@ class Mlp(nn.Module):
             drop_path=0.,
             channel_idle=False,
             act_layer=nn.GELU,
-            feature_norm="LayerNorm"):
+            feature_norm="LayerNorm",
+            idle_ratio=0.75):
             
         super().__init__()
         
@@ -47,7 +48,7 @@ class Mlp(nn.Module):
         ######################## ↓↓↓↓↓↓ ########################
         # Channel-idle
         self.channel_idle = channel_idle
-        self.act_channels = dim_in
+        self.act_channels = int(dim_hidden * (1-idle_ratio))
         ######################## ↑↑↑↑↑↑ ########################
         
         ######################## ↓↓↓↓↓↓ ########################
@@ -300,7 +301,7 @@ class SwinTransformerBlock(nn.Module):
 
     def __init__(self, dim, input_resolution, num_heads, window_size=7, shift_size=0,
                  mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0., drop_path=0.,
-                 act_layer=nn.GELU, norm_layer=nn.LayerNorm,
+                 act_layer=nn.GELU, norm_layer=nn.LayerNorm, idle_ratio=0.75,
                  fused_window_process=False, channel_idle=False, feature_norm="LayerNorm"):
         super().__init__()
         self.dim = dim
@@ -331,7 +332,8 @@ class SwinTransformerBlock(nn.Module):
                        bias=qkv_bias,
                        drop_path=drop_path,
                        channel_idle=channel_idle,
-                       feature_norm=feature_norm)
+                       feature_norm=feature_norm,
+                       idle_ratio=idle_ratio)
 
         if self.shift_size > 0:
             # calculate attention mask for SW-MSA
@@ -480,7 +482,7 @@ class BasicLayer(nn.Module):
     def __init__(self, dim, input_resolution, depth, num_heads, window_size,
                  mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., norm_layer=nn.LayerNorm, downsample=None, use_checkpoint=False,
-                 fused_window_process=False, channel_idle=False, feature_norm="LayerNorm"):
+                 fused_window_process=False, channel_idle=False, feature_norm="LayerNorm", idle_ratio=0.75):
 
         super().__init__()
         self.dim = dim
@@ -500,7 +502,8 @@ class BasicLayer(nn.Module):
                                  norm_layer=norm_layer,
                                  fused_window_process=fused_window_process, 
                                  channel_idle=channel_idle, 
-                                 feature_norm=feature_norm)
+                                 feature_norm=feature_norm,
+                                 idle_ratio=idle_ratio)
             for i in range(depth)])
 
         # patch merging layer
@@ -600,7 +603,8 @@ class SwinTransformer(nn.Module):
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
                  use_checkpoint=False, fused_window_process=False, 
-                 channel_idle=False, feature_norm="LayerNorm", **kwargs):
+                 channel_idle=False, feature_norm="LayerNorm", 
+                 idle_ratio=0.75, **kwargs):
         super().__init__()
 
         self.num_classes = num_classes
@@ -647,7 +651,8 @@ class SwinTransformer(nn.Module):
                                use_checkpoint=use_checkpoint,
                                fused_window_process=fused_window_process,
                                channel_idle=channel_idle, 
-                               feature_norm=feature_norm)
+                               feature_norm=feature_norm,
+                               idle_ratio=idle_ratio)
             self.layers.append(layer)
 
         self.norm = norm_layer(self.num_features)

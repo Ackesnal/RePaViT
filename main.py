@@ -205,6 +205,7 @@ def get_args_parser():
     parser.add_argument('--feature_norm', default='LayerNorm', type=str, choices=['LayerNorm', 'BatchNorm', 'EmpiricalSTD', 'None'])
     parser.add_argument('--weight_standardization', default=False, action='store_true')
     parser.add_argument('--channel_idle', default=False, action='store_true')
+    parser.add_argument('--idle_ratio', default=0.75, type=float)
     parser.add_argument('--po_shortcut', default=False, action='store_true')
     parser.add_argument('--shortcut_gain', type=float, default=1.0)
     parser.add_argument('--gamma', type=float, default=0.1)
@@ -347,7 +348,8 @@ def main(args):
         shortcut_gain=args.shortcut_gain,
         act_layer=act_layer,
         layer_scale=args.layer_scale,
-        init_values=args.init_values
+        init_values=args.init_values,
+        idle_ratio=args.idle_ratio
     )
     
     if args.finetune:
@@ -576,7 +578,7 @@ def main(args):
             config={
             "model": args.model,
             "layer": "FFN" if args.channel_idle and not args.po_shortcut else "MHSA" if not args.channel_idle and args.po_shortcut else "Both" if args.channel_idle and args.po_shortcut else "None",
-            "shortcut_gain": args.shortcut_gain,
+            #"shortcut_gain": args.shortcut_gain,
             "norm_type": args.feature_norm,
             "lr": args.lr,
             "min-lr": args.min_lr,
@@ -587,6 +589,7 @@ def main(args):
             "epochs": args.epochs,
             "batch_size": args.batch_size*args.accumulation_steps*args.world_size,
             "drop_path": args.drop_path,
+            "idle_ratio": args.idle_ratio,
             }, 
             mode=os.environ['WANDB_MODE']
         )

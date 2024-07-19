@@ -29,7 +29,8 @@ class Mlp(nn.Module):
             shortcut_gain=0.0,
             std=1.0,
             layer_scale=False,
-            init_values=1e-5):
+            init_values=1e-5,
+            idle_ratio=0.75):
             
         super().__init__()
         
@@ -50,7 +51,7 @@ class Mlp(nn.Module):
         ######################## ↓↓↓↓↓↓ ########################
         # Channel-idle
         self.channel_idle = channel_idle
-        self.act_channels = dim_in
+        self.act_channels = int(dim_hidden * (1-idle_ratio))
         ######################## ↑↑↑↑↑↑ ########################
         
         ######################## ↓↓↓↓↓↓ ########################
@@ -424,7 +425,7 @@ class RePaAttention(nn.Module):
 class Block(nn.Module):
     # taken from https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/vision_transformer.py
     def __init__(self, dim, num_head, mlp_ratio=4., bias=False, qk_scale=None, drop=0., attn_drop=0.,
-                 drop_path=0., act_layer=nn.GELU, channel_idle=False, po_shortcut=False, 
+                 drop_path=0., act_layer=nn.GELU, channel_idle=False, po_shortcut=False, idle_ratio=0.75,
                  feature_norm="LayerNorm", shortcut_gain=1.0, std=1.0, layer_scale=False, init_values=1e-5): 
         super().__init__()
         
@@ -451,7 +452,7 @@ class Block(nn.Module):
             self.mlp = Mlp(dim_in=dim, dim_hidden=dim_hidden, bias=bias, act_layer=act_layer, 
                            drop_path=drop_path, feature_norm=feature_norm, std=std, 
                            channel_idle=channel_idle, shortcut_gain=shortcut_gain, 
-                           layer_scale=layer_scale, init_values=init_values)
+                           layer_scale=layer_scale, init_values=init_values, idle_ratio=idle_ratio)
         else:
             self.mlp = Mlp(dim_in=dim, dim_hidden=dim_hidden, bias=bias, 
                            act_layer=act_layer, drop_path=drop_path, 
@@ -499,7 +500,8 @@ class Transformer(VisionTransformer):
             feature_norm='LayerNorm',
             channel_idle=False,
             po_shortcut=False,
-            shortcut_gain=0.0):
+            shortcut_gain=0.0,
+            idle_ratio=0.75):
         
         super().__init__(
             img_size=img_size,
@@ -539,7 +541,8 @@ class Transformer(VisionTransformer):
                 shortcut_gain=shortcut_gain,
                 std=std[i],
                 init_values=init_values,
-                layer_scale=layer_scale
+                layer_scale=layer_scale,
+                idle_ratio=idle_ratio
             )
             for i in range(depth)])
         
