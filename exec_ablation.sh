@@ -12,8 +12,8 @@
 export WORLD_SIZE=$(($SLURM_NNODES * $SLURM_NTASKS_PER_NODE))
 export MASTER_PORT=13479
 export MASTER_ADDR=$(scontrol show hostname $SLURM_NODELIST | head -n 1)
-export BATCH_SIZE=$(echo "scale=0; 2048 / $WORLD_SIZE" | bc)
 
+export BATCH_SIZE=$(echo "scale=0; 2048 / $WORLD_SIZE" | bc)
 WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env main.py --batch-size=$BATCH_SIZE --output_dir=output/RePaViT_Base_patch16_224_layer12 --dist-eval \
 --accumulation-steps=2 \
 --model=RePaViT_Base_patch16_224_layer12 \
@@ -95,8 +95,6 @@ WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLUR
 --wandb_suffix=RatioStudy \
 --color-jitter=0.4 \
 
-
-export BATCH_SIZE=$(echo "scale=0; 1024 / $WORLD_SIZE" | bc)
 WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env main.py --batch-size=$BATCH_SIZE --output_dir=output/RePaSwin_Base --dist-eval \
 --model=RePaSwin_Base \
 --data-path=/scratch/itee/uqxxu16/data/imagenet \
@@ -116,8 +114,6 @@ WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLUR
 --wandb_suffix=RatioStudy \
 --color-jitter=0.4 \
 
-
-export BATCH_SIZE=$(echo "scale=0; 1024 / $WORLD_SIZE" | bc)
 WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env main.py --batch-size=$BATCH_SIZE --output_dir=output/RePaSwin_Base --dist-eval \
 --model=RePaSwin_Base \
 --data-path=/scratch/itee/uqxxu16/data/imagenet \
