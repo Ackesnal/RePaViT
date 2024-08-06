@@ -139,7 +139,7 @@ class Mlp(nn.Module):
             if self.layer_scale:
                 fc2_weight = fc2_weight * self.ls[:, None]
         
-        return fc1_bias, fc1_weight, fc2_bias, fc2_weight
+        return fc1_bias, fc1_weight, fc2_bias, fc2_weight, self.act_channels
 
 
 
@@ -148,22 +148,23 @@ class RePaMlp(nn.Module):
                  fc1_bias, 
                  fc1_weight, 
                  fc2_bias, 
-                 fc2_weight, 
+                 fc2_weight,
+                 act_channels, 
                  act_layer):
         super().__init__()
         
         dim = fc1_weight.shape[1]
         self.fc1 = nn.Linear(dim, dim)
-        self.fc2 = nn.Linear(dim, dim)
-        self.fc3 = nn.Linear(dim, dim, bias=False)
+        self.fc2 = nn.Linear(dim, act_channels)
+        self.fc3 = nn.Linear(act_channels, dim, bias=False)
         self.act = act_layer()
         
         with torch.no_grad():
-            weight1 = fc1_weight[dim:, :].T @ fc2_weight[:, dim:].T + torch.eye(dim).to(fc1_weight.device)
-            weight2 = fc1_weight[:dim, :]
-            weight3 = fc2_weight[:, :dim] 
-            bias1 = (fc1_bias[dim:].unsqueeze(0) @ fc2_weight[:, dim:].T).squeeze() + fc2_bias
-            bias2 = fc1_bias[:dim]
+            weight1 = fc1_weight[act_channels:, :].T @ fc2_weight[:, act_channels:].T + torch.eye(dim).to(fc1_weight.device)
+            weight2 = fc1_weight[:act_channels, :]
+            weight3 = fc2_weight[:, :act_channels] 
+            bias1 = (fc1_bias[act_channels:].unsqueeze(0) @ fc2_weight[:, act_channels:].T).squeeze() + fc2_bias
+            bias2 = fc1_bias[:act_channels]
             
             self.fc1.weight.copy_(weight1.T)
             self.fc1.bias.copy_(bias1)
@@ -464,9 +465,9 @@ class Block(nn.Module):
         return x
     
     def reparam(self):
-        fc1_bias, fc1_weight, fc2_bias, fc2_weight = self.mlp.reparam()
+        fc1_bias, fc1_weight, fc2_bias, fc2_weight, act_channels = self.mlp.reparam()
         del self.mlp
-        self.mlp = RePaMlp(fc1_bias, fc1_weight, fc2_bias, fc2_weight, self.act_layer)
+        self.mlp = RePaMlp(fc1_bias, fc1_weight, fc2_bias, fc2_weight, act_channels, self.act_layer)
         return
         
 
