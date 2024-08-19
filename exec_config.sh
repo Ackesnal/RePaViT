@@ -13,6 +13,27 @@ export WORLD_SIZE=$(($SLURM_NNODES * $SLURM_NTASKS_PER_NODE))
 export MASTER_PORT=15556
 export MASTER_ADDR=$(scontrol show hostname $SLURM_NODELIST | head -n 1)
 
+
+export BATCH_SIZE=$(echo "scale=0; 2048 / $WORLD_SIZE" | bc)
+WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env main.py --batch-size=$BATCH_SIZE --output_dir=output/RePaSwin_Small --dist-eval \
+--model=RePaSwin_Small \
+--data-path /scratch/itee/uqxxu16/data/imagenet \
+--channel_idle \
+--feature_norm=BatchNorm \
+--lr=6.2e-3 \
+--min-lr=5e-5 \
+--clip-grad=5.0 \
+--warmup-lr=1e-6 \
+--warmup-epochs=20 \
+--unscale-lr \
+--weight-decay=0.1444 \
+--opt=lamb \
+--num_workers=30 \
+--drop-path=0.0938 \
+--use_wandb \
+--wandb_suffix=full_300epoch \
+--color-jitter=0.4 \
+
 #export BATCH_SIZE=$(echo "scale=0; 2048 / $WORLD_SIZE" | bc)
 #WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env main.py --batch-size=$BATCH_SIZE --output_dir=output/RePaViT_Small_patch16_224_layer12 --dist-eval \
 #--accumulation-steps=2 \
@@ -112,21 +133,21 @@ export MASTER_ADDR=$(scontrol show hostname $SLURM_NODELIST | head -n 1)
 #--wandb_suffix=300Epochs \
 #--color-jitter=0.4 \
 
-export BATCH_SIZE=$(echo "scale=0; 2048 / $WORLD_SIZE" | bc)
-WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env main.py --batch-size=$BATCH_SIZE --output_dir=output/RePaPoolformer_s24 --dist-eval \
---accumulation-steps=2 \
---model=RePaPoolformer_s24 \
---data-path=/scratch/itee/uqxxu16/data/imagenet \
---feature_norm=BatchNorm \
---channel_idle \
---lr=5e-3 \
---min-lr=2e-6 \
---warmup-lr=5e-7 \
---warmup-epochs=20 \
---unscale-lr \
---weight-decay=0.12 \
---opt=lamb \
---num_workers=30 \
---drop-path=0.06 \
---use_wandb \
---wandb_suffix=300Epochs \
+#export BATCH_SIZE=$(echo "scale=0; 2048 / $WORLD_SIZE" | bc)
+#WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --use_env main.py --batch-size=$BATCH_SIZE --output_dir=output/RePaPoolformer_s24 --dist-eval \
+#--accumulation-steps=2 \
+#--model=RePaPoolformer_s24 \
+#--data-path=/scratch/itee/uqxxu16/data/imagenet \
+#--feature_norm=BatchNorm \
+#--channel_idle \
+#--lr=5e-3 \
+#--min-lr=2e-6 \
+#--warmup-lr=5e-7 \
+#--warmup-epochs=20 \
+#--unscale-lr \
+#--weight-decay=0.12 \
+#--opt=lamb \
+#--num_workers=30 \
+#--drop-path=0.06 \
+#--use_wandb \
+#--wandb_suffix=300Epochs \
