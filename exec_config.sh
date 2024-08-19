@@ -22,7 +22,6 @@ WANDB_MODE=online srun python -m torch.distributed.launch --nproc_per_node=$SLUR
 --feature_norm=BatchNorm \
 --lr=6.2e-3 \
 --min-lr=5e-5 \
---clip-grad=5.0 \
 --warmup-lr=1e-6 \
 --warmup-epochs=20 \
 --unscale-lr \
