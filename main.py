@@ -192,7 +192,8 @@ def get_args_parser():
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
     
     parser.add_argument('--test_speed', action='store_true')
-    parser.add_argument('--only_test_speed', action='store_true')     
+    parser.add_argument('--only_test_speed', action='store_true')
+    parser.add_argument('--latency_profile', action='store_true') 
     
     parser.add_argument('--signal_test', action='store_true')
     parser.add_argument('--use_wandb', default=False, action='store_true')
@@ -248,6 +249,50 @@ def speed_test(model, ntest=100, batchsize=128, x=None, **kwargs):
     speed = batchsize * ntest / elapse
 
     return speed
+    
+            
+            
+class TimeMeasure:
+    def __init__(self, device="cpu"):
+        self.forward_times = {}  # 保存每个模块的累计运行时间
+        self.events = {}         # 保存每个模块的开始和结束事件（针对 GPU）
+        self.device=device
+
+    def add_hooks(self, model):
+        for name, module in model.named_modules():
+            print(name)
+            if "attn" == name.lower().split(".")[-1] or "mlp" == name.lower().split(".")[-1] or "patch_embed" == name.lower() or"token_mixer" == name.lower().split(".")[-1] or "mlp_tokens" == name.lower().split(".")[-1] or "mlp_channels" == name.lower().split(".")[-1] or "stem" == name:
+                self.events[name] = {}
+                module.register_forward_pre_hook(self.get_forward_pre_hook(name))
+                module.register_forward_hook(self.get_forward_hook(name))
+
+    def get_forward_pre_hook(self, name):
+        def pre_hook(module, input):
+            if self.device == "cuda":
+                # 针对 GPU 模型
+                self.events[name]['start'] = torch.cuda.Event(enable_timing=True)
+                self.events[name]['end'] = torch.cuda.Event(enable_timing=True)
+                self.events[name]['start'].record()
+            else:
+                # 针对 CPU 模型
+                self.events[name]['start'] = time.time()
+        return pre_hook
+
+    def get_forward_hook(self, name):
+        def hook(module, input, output):
+            if self.device == "cuda":
+                self.events[name]['end'].record()
+                # 等待所有 CUDA 核心任务完成
+                torch.cuda.synchronize()
+                elapsed_time = self.events[name]['start'].elapsed_time(self.events[name]['end'])  # 时间以毫秒为单位
+            else:
+                elapsed_time = (time.time() - self.events[name]['start']) * 1000  # 转换为毫秒
+
+            if name in self.forward_times:
+                self.forward_times[name] += elapsed_time
+            else:
+                self.forward_times[name] = elapsed_time
+        return hook
 
 
 
@@ -352,6 +397,12 @@ def main(args):
         idle_ratio=args.idle_ratio
     )
     
+    if args.reparam and not args.eval:
+        print("Reparametering the backbone ...")
+        model.reparam()
+        print("...")
+        print("Reparameterization done!")
+    
     if args.finetune:
         if args.finetune.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(
@@ -417,21 +468,33 @@ def main(args):
             print("Reparametering the backbone ...")
             model.eval()
             model.reparam()
+            model.to(device)
             print("...")
             model.train()
             print("Reparameterization done!")
-            
-        # test model throughput for three times to ensure accuracy
-        print('Start inference speed testing...')
-        inference_speed = speed_test(model)
-        print('inference_speed (inaccurate):', inference_speed, 'images/s')
-        inference_speed = speed_test(model)
-        print('inference_speed:', inference_speed, 'images/s')
-        inference_speed = speed_test(model)
-        print('inference_speed:', inference_speed, 'images/s')
-        get_macs(model)
+        
+        if args.latency_profile:
+            model.eval()
+            x = torch.rand(128, 3, 224, 224).to(device)
+            timer = TimeMeasure(device=args.device)
+            timer.add_hooks(model)
+            model(x)
+            for name, time_ms in timer.forward_times.items():
+                print(f"Module {name}: {time_ms:.3f} ms")
+            model.train()
+        else:
+            # test model throughput for three times to ensure accuracy
+            print('Start inference speed testing...')
+            inference_speed = speed_test(model)
+            print('inference_speed (inaccurate):', inference_speed, 'images/s')
+            inference_speed = speed_test(model)
+            print('inference_speed:', inference_speed, 'images/s')
+            inference_speed = speed_test(model)
+            print('inference_speed:', inference_speed, 'images/s')
+            get_macs(model)
     if args.only_test_speed:
         return
+
         
     model_ema = None
     if args.model_ema:
@@ -557,7 +620,7 @@ def main(args):
         test_stats = evaluate(data_loader_val, model, device)
         print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
         return
-    
+        
     MACs = get_macs(model)
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()

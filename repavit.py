@@ -173,9 +173,8 @@ class RePaMlp(nn.Module):
             self.fc3.weight.copy_(weight3)
         
     def forward(self, x):
-        with torch.no_grad():
-            x = self.fc3(self.act(self.fc2(x))) + self.fc1(x)
-            return x
+        x = self.fc3(self.act(self.fc2(x))) + self.fc1(x)
+        return x
                     
         
         
