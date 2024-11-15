@@ -397,12 +397,6 @@ def main(args):
         idle_ratio=args.idle_ratio
     )
     
-    if args.reparam and not args.eval:
-        print("Reparametering the backbone ...")
-        model.reparam()
-        print("...")
-        print("Reparameterization done!")
-    
     if args.finetune:
         if args.finetune.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(
