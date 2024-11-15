@@ -30,7 +30,8 @@ class Mlp(nn.Module):
             feature_norm="LayerNorm",
             std=1.0,
             layer_scale=False,
-            init_values=1e-5):
+            init_values=1e-5,
+            idle_ratio=0.75):
             
         super().__init__()
         
@@ -51,7 +52,7 @@ class Mlp(nn.Module):
         ######################## ↓↓↓↓↓↓ ########################
         # Channel-idle
         self.channel_idle = channel_idle
-        self.act_channels = dim_in
+        self.act_channels = int(dim_hidden * (1-idle_ratio))
         ######################## ↑↑↑↑↑↑ ########################
         
         ######################## ↓↓↓↓↓↓ ########################
@@ -142,8 +143,7 @@ class Mlp(nn.Module):
             
             if self.layer_scale:
                 fc2_weight = fc2_weight * self.ls[:, None]
-
-        return fc1_bias, fc1_weight, fc2_bias, fc2_weight
+        return fc1_bias, fc1_weight, fc2_bias, fc2_weight, self.act_channels
 
 
 
@@ -152,23 +152,24 @@ class RePaMlp(nn.Module):
                  fc1_bias, 
                  fc1_weight, 
                  fc2_bias, 
-                 fc2_weight, 
+                 fc2_weight,
+                 act_channels, 
                  act_layer):
         super().__init__()
         
         dim = fc1_weight.shape[1]
         # Hyperparameters
         self.fc1 = nn.Conv2d(dim, dim, 1)
-        self.fc2 = nn.Conv2d(dim, dim, 1)
-        self.fc3 = nn.Conv2d(dim, dim, 1, bias=False)
+        self.fc2 = nn.Conv2d(dim, act_channels, 1)
+        self.fc3 = nn.Conv2d(act_channels, dim, 1, bias=False)
         self.act = act_layer()
         
         with torch.no_grad():
-            weight1 = fc1_weight[dim:, :].T @ fc2_weight[:, dim:].T + torch.eye(dim).to(fc1_weight.device)
-            weight2 = fc1_weight[:dim, :]
-            weight3 = fc2_weight[:, :dim] 
-            bias1 = (fc1_bias[dim:].unsqueeze(0) @ fc2_weight[:, dim:].T).squeeze() + fc2_bias
-            bias2 = fc1_bias[:dim]
+            weight1 = fc1_weight[act_channels:, :].T @ fc2_weight[:, act_channels:].T + torch.eye(dim).to(fc1_weight.device)
+            weight2 = fc1_weight[:act_channels, :]
+            weight3 = fc2_weight[:, :act_channels] 
+            bias1 = (fc1_bias[act_channels:].unsqueeze(0) @ fc2_weight[:, act_channels:].T).squeeze() + fc2_bias
+            bias2 = fc1_bias[:act_channels]
             
             self.fc1.weight.copy_(weight1.T[:, :, None, None])
             self.fc1.bias.copy_(bias1)
@@ -177,9 +178,8 @@ class RePaMlp(nn.Module):
             self.fc3.weight.copy_(weight3[:, :, None, None])
         
     def forward(self, x):
-        with torch.no_grad():
-            x = self.fc3(self.act(self.fc2(x))) + self.fc1(x)
-            return x
+        x = self.fc3(self.act(self.fc2(x))) + self.fc1(x)
+        return x
         
         
         
@@ -270,7 +270,7 @@ class PoolFormerBlock(nn.Module):
                  act_layer=nn.GELU, norm_layer=GroupNorm, 
                  drop=0., drop_path=0., 
                  use_layer_scale=True, layer_scale_init_value=1e-5,
-                 channel_idle=False, feature_norm="LayerNorm"):
+                 channel_idle=False, feature_norm="LayerNorm", idle_ratio=0.75):
 
         super().__init__()
         
@@ -282,7 +282,8 @@ class PoolFormerBlock(nn.Module):
         self.mlp = Mlp(dim_in=dim, dim_hidden=mlp_hidden_dim, 
                        act_layer=act_layer, drop_path=drop_path, 
                        channel_idle=channel_idle, feature_norm=feature_norm,
-                       init_values=layer_scale_init_value, layer_scale=use_layer_scale)
+                       init_values=layer_scale_init_value, layer_scale=use_layer_scale,
+                       idle_ratio=idle_ratio)
         
         # The following two techniques are useful to train deep PoolFormers.
         self.drop_path = DropPath(drop_path) if drop_path > 0. \
@@ -304,9 +305,9 @@ class PoolFormerBlock(nn.Module):
         return x
         
     def reparam(self):
-        fc1_bias, fc1_weight, fc2_bias, fc2_weight = self.mlp.reparam()
+        fc1_bias, fc1_weight, fc2_bias, fc2_weight, act_channels = self.mlp.reparam()
         del self.mlp
-        self.mlp = RePaMlp(fc1_bias, fc1_weight, fc2_bias, fc2_weight, self.act_layer)
+        self.mlp = RePaMlp(fc1_bias, fc1_weight, fc2_bias, fc2_weight, act_channels, self.act_layer)
         return
     
     
@@ -316,7 +317,7 @@ def basic_blocks(dim, index, layers,
                  act_layer=nn.GELU, norm_layer=GroupNorm, 
                  drop_rate=.0, drop_path_rate=0., 
                  use_layer_scale=True, layer_scale_init_value=1e-5,
-                 channel_idle=False, feature_norm="LayerNorm"):
+                 channel_idle=False, feature_norm="LayerNorm", idle_ratio=0.75):
     """
     generate PoolFormer blocks for a stage
     return: PoolFormer blocks 
@@ -331,7 +332,8 @@ def basic_blocks(dim, index, layers,
             drop=drop_rate, drop_path=block_dpr, 
             use_layer_scale=use_layer_scale, 
             layer_scale_init_value=layer_scale_init_value, 
-            channel_idle=channel_idle, feature_norm=feature_norm
+            channel_idle=channel_idle, feature_norm=feature_norm,
+            idle_ratio=idle_ratio
             ))
     blocks = nn.Sequential(*blocks)
 
@@ -370,6 +372,7 @@ class PoolFormer(nn.Module):
                  pretrained=None, 
                  channel_idle=False,
                  feature_norm="LayerNorm",
+                 idle_ratio=0.75,
                  **kwargs):
 
         super().__init__()
@@ -392,7 +395,8 @@ class PoolFormer(nn.Module):
                                  drop_path_rate=drop_path_rate,
                                  use_layer_scale=use_layer_scale, 
                                  layer_scale_init_value=layer_scale_init_value,
-                                 channel_idle=channel_idle, feature_norm=feature_norm)
+                                 channel_idle=channel_idle, feature_norm=feature_norm,
+                                 idle_ratio=idle_ratio)
             network.append(stage)
             if i >= len(layers) - 1:
                 break
