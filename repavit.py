@@ -159,6 +159,8 @@ class RePaMlp(nn.Module):
         self.fc3 = nn.Linear(act_channels, dim, bias=False)
         self.act = act_layer()
         
+        self.norm = nn.BatchNorm1d(dim)
+        
         with torch.no_grad():
             weight1 = fc1_weight[act_channels:, :].T @ fc2_weight[:, act_channels:].T + torch.eye(dim).to(fc1_weight.device)
             weight2 = fc1_weight[:act_channels, :]
@@ -173,6 +175,7 @@ class RePaMlp(nn.Module):
             self.fc3.weight.copy_(weight3)
         
     def forward(self, x):
+        x = self.norm(x.transpose(-1,-2)).transpose(-1, -2)
         x = self.fc3(self.act(self.fc2(x))) + self.fc1(x)
         return x
                     

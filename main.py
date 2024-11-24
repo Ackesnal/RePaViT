@@ -397,6 +397,9 @@ def main(args):
         idle_ratio=args.idle_ratio
     )
     
+    if args.reparam:
+        model.reparam()
+    
     if args.finetune:
         if args.finetune.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(
