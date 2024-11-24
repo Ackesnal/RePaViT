@@ -99,7 +99,7 @@ class Trainer(object):
                 print("Training completed, no need to resubmit.")
                 return None
             else:
-                print("Checkpoint exists, resuming training...")
+                print(f"Checkpoint exists at {str(current_checkpoint_path)}, resuming training...")
                 self.args.resume = str(current_checkpoint_path)
                 return submitit.helpers.DelayedSubmission(type(self)(self.args))
             
