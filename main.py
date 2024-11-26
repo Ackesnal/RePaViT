@@ -461,15 +461,15 @@ def main(args):
     model.to(device)
     
     if args.test_speed:
-        if args.reparam:
-            print("Reparametering the backbone ...")
-            model.eval()
-            model.reparam()
-            model.to(device)
-            print("...")
-            model.train()
-            print("Reparameterization done!")
-        
+#        if args.reparam:
+#            print("Reparametering the backbone ...")
+#            model.eval()
+#            model.reparam()
+#            model.to(device)
+#            print("...")
+#            model.train()
+#            print("Reparameterization done!")
+#        
         if args.latency_profile:
             model.eval()
             x = torch.rand(128, 3, 224, 224).to(device)
