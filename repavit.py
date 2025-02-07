@@ -10,7 +10,6 @@ from timm.models._registry import register_model
 from timm.layers import DropPath, trunc_normal_, PatchEmbed
 import math
 import torch.autograd.profiler as profiler
-import torch.utils.checkpoint as ckpt
 
 class Mlp(nn.Module):
     """ MLP as used in Vision Transformer, MLP-Mixer and related networks
@@ -91,9 +90,13 @@ class Mlp(nn.Module):
         
         # Activation
         if self.channel_idle:
-            mask = torch.zeros_like(x, dtype=torch.bool)
-            mask[:, :, :self.act_channels] = True
-            x = torch.where(mask, self.act(x), x)
+            if self.act_channels == 0:
+                pass
+            elif self.act_channels < C:
+                x = torch.concat((self.act(x[:,:,:self.act_channels]), x[:,:,self.act_channels:]), 
+                                 dim=-1)
+            else:
+                x = self.act(x)
         else:
             x = self.act(x)
         
@@ -230,28 +233,22 @@ class Attention(nn.Module):
         
         ######################## ↓↓↓↓↓↓ ########################
         # Normalization
-        self.feature_norm = feature_norm
-        if self.feature_norm == "LayerNorm":
-            if self.po_shortcut:
+        if self.po_shortcut:
+            self.feature_norm = feature_norm
+            if self.feature_norm == "LayerNorm":
                 self.norm1 = nn.LayerNorm(self.dim)
                 self.norm2 = nn.LayerNorm(self.dim)
                 self.norm3 = nn.LayerNorm(self.dim)
-            else:
-                self.norm = nn.LayerNorm(self.dim)
-        elif self.feature_norm == "BatchNorm":
-            if self.po_shortcut:
+            elif self.feature_norm == "BatchNorm":
                 self.norm1 = nn.BatchNorm1d(self.dim)
                 self.norm2 = nn.BatchNorm1d(self.dim)
                 self.norm3 = nn.BatchNorm1d(self.dim)
-            else:
-                self.norm = nn.BatchNorm1d(dim)
-        elif self.feature_norm == "EmpiricalSTD":
-            if self.po_shortcut:
+            elif self.feature_norm == "EmpiricalSTD":
                 self.std1 = nn.Parameter(torch.ones((1))*std)
                 self.std2 = nn.Parameter(torch.ones((1))*std)
                 self.std3 = nn.Parameter(torch.ones((1))*std)
-            else:
-                self.std = nn.Parameter(torch.ones((1))*std)
+        else:
+            self.norm = nn.LayerNorm(self.dim)
         ######################## ↑↑↑↑↑↑ ########################
         
         ######################## ↓↓↓↓↓↓ ########################
@@ -269,14 +266,7 @@ class Attention(nn.Module):
             shortcut = x
             
             # Feature normalization
-            if self.feature_norm == "LayerNorm":
-                x = self.norm(x)
-            elif self.feature_norm == "BatchNorm":
-                x = self.norm(x.transpose(-1,-2)).transpose(-1,-2)
-            elif self.feature_norm == "EmpiricalSTD":
-                x = x / self.std.unsqueeze(0).unsqueeze(-1)
-            else:
-                pass
+            x = self.norm(x)
             
             # Project to QKV
             qkv = self.qkv(x)
@@ -525,6 +515,9 @@ class Transformer(VisionTransformer):
             
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
         std = [x.item() for x in torch.logspace(start=0, end=2, steps=depth, base=2)]
+        
+        idle_ratio = [(2*idle_ratio-1) + (2-2*idle_ratio) / (depth-1) * (i+1) for i in range(depth-1)] + [0.0]
+        
         self.blocks = nn.Sequential(*[
             block_fn(
                 dim=embed_dim,
@@ -542,7 +535,7 @@ class Transformer(VisionTransformer):
                 std=std[i],
                 init_values=init_values,
                 layer_scale=layer_scale,
-                idle_ratio=idle_ratio
+                idle_ratio=idle_ratio[i]
             )
             for i in range(depth)])
         

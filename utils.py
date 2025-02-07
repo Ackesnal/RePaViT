@@ -292,15 +292,15 @@ class NativeScalerWithGradNormCount:
                 else:
                     dispatch_clip_grad(parameters, clip_grad, mode=clip_mode)
             
+            # for name, p in named_parameters:
+            #     if p.grad is not None:
+            #         print(name, "   ", p.grad.mean().item(), "    ", p.grad.max().item(), "    ", p.grad.min().item(), "    ", p.grad.norm().item())
+            #         #print(name, "  ", p.grad.mean().item(), "    ", p.grad.max().item(), "    ", p.grad.min().item(), "    ", p.norm().item(), "    ", p.grad.norm().item())
+            # print("\n\n\n\n")
+            
             self._scaler.step(optimizer)
             self._scaler.update()
             
-            """
-            for name, p in named_parameters:
-                if p.grad is not None and "_weight" in name:
-                    print(name, "  ", p.grad.mean().item(), "    ", p.grad.max().item(), "    ", p.grad.min().item(), "    ", p.norm().item(), "    ", p.grad.norm().item())
-            print("\n\n\n\n")
-            """
             
             
     def state_dict(self):

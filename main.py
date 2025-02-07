@@ -166,6 +166,7 @@ def get_args_parser():
     parser.add_argument('--inat-category', default='name',
                         choices=['kingdom', 'phylum', 'class', 'order', 'supercategory', 'family', 'genus', 'name'],
                         type=str, help='semantic granularity')
+    parser.add_argument('--prefetch_factor', default=2, type=int)
 
     parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
@@ -347,6 +348,8 @@ def main(args):
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
+        persistent_workers=True,
+        prefetch_factor=args.prefetch_factor if args.num_workers>0 else None,
         drop_last=True,
     )
     if args.ThreeAugment:
@@ -357,6 +360,7 @@ def main(args):
         batch_size=int(1.5 * args.batch_size),
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
+        prefetch_factor=args.prefetch_factor if args.num_workers>0 else None,
         drop_last=False
     )
 
