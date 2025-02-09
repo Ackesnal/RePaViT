@@ -2,13 +2,16 @@
 # All rights reserved.
 import os
 import json
+from PIL import Image
 
 from torchvision import datasets, transforms
 from torchvision.datasets.folder import ImageFolder, default_loader
+from torch.utils.data import Dataset
 
 from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.data import create_transform
-
+import concurrent.futures
+import random
 
 class INatDataset(ImageFolder):
     def __init__(self, root, train=True, year=2018, transform=None, target_transform=None,
@@ -53,6 +56,62 @@ class INatDataset(ImageFolder):
     # __getitem__ and __len__ inherited from ImageFolder
 
 
+class CustomizedImagenetDataset(Dataset):
+    def __init__(self, root, transform=None, num_workers=2):
+        self.root = root
+        self.transform = transform
+        
+        # 获取所有类别目录，并进行排序
+        self.classes = sorted([d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d))])
+        # 构造类别到索引的映射，例如 {'n01440764': 0, 'n01443537': 1, ...}
+        self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.classes)}
+        
+        # 遍历每个类别，收集 (图像路径, 标签) 对
+        self.samples = []
+        for cls_name in self.classes:
+            cls_dir = os.path.join(root, cls_name)
+            label = self.class_to_idx[cls_name]
+            path_with_label = []
+            for fname in os.listdir(cls_dir):
+                # 这里过滤 jpg、jpeg、png 格式的图像（可根据需要扩展）
+                if fname.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    path_with_label.append([os.path.join(cls_dir, fname), label])
+            # 多线程加载图片
+            with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+                image_with_label = list(executor.map(self._load_image, path_with_label))
+
+            self.samples.extend(image_with_label)
+        
+            print(label)
+    
+    def _load_image(self, path_with_label):
+        """
+        加载单张图片并转换为 RGB 格式。
+        """
+        try:
+            path, label = path_with_label
+            if random.random() < 0.5:
+                image = Image.open(path).convert('RGB')
+            else:
+                image = path
+            return (image, label)
+        except Exception as e:
+            print(f"加载图片 {path} 时出错：{e}")
+            # 发生错误时可以返回 None 或者一个默认图片，根据需求处理
+            return None
+                        
+    def __len__(self):
+        return len(self.samples)
+    
+    def __getitem__(self, index):
+        image, label = self.samples[index]
+        if type(image) is str:
+            image = Image.open(image).convert('RGB')
+        if self.transform:
+            image = self.transform(image)
+        return image, label
+    
+
 def build_dataset(is_train, args):
     transform = build_transform(is_train, args)
 
@@ -60,8 +119,12 @@ def build_dataset(is_train, args):
         dataset = datasets.CIFAR100(args.data_path, train=is_train, transform=transform)
         nb_classes = 100
     elif args.data_set == 'IMNET':
-        root = os.path.join(args.data_path, 'train' if is_train else 'val')
-        dataset = datasets.ImageFolder(root, transform=transform)
+        if False: #is_train:
+            root = os.path.join(args.data_path, 'train')
+            dataset = CustomizedImagenetDataset(root, transform=transform)
+        else:
+            root = os.path.join(args.data_path, 'train' if is_train else 'val')
+            dataset = datasets.ImageFolder(root, transform=transform)
         nb_classes = 1000
     elif args.data_set == 'INAT':
         dataset = INatDataset(args.data_path, train=is_train, year=2018,

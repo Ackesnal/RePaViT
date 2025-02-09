@@ -15,6 +15,7 @@ from timm.utils import accuracy, ModelEma
 
 from losses import DistillationLoss
 import utils
+import time
 
 def check_nan(tensor):
     return torch.isnan(tensor).float().sum().item() > 0
@@ -49,7 +50,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
             targets = targets.gt(0.0).type(targets.dtype)
         
         if use_amp:
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast("cuda"):
                 outputs = model(samples)
                 loss = criterion(samples, outputs, targets)
                 loss = loss / args.accumulation_steps
@@ -120,7 +121,7 @@ def evaluate(data_loader, model, device):
         target = target.to(device, non_blocking=True)
 
         # compute output
-        with torch.cuda.amp.autocast():
+        with torch.amp.autocast("cuda"):
             output = model(images)
             loss = criterion(output, target)
 

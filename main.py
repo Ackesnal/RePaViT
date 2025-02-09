@@ -342,7 +342,7 @@ def main(args):
     else:
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
         sampler_val = torch.utils.data.SequentialSampler(dataset_val)
-
+        
     data_loader_train = torch.utils.data.DataLoader(
         dataset_train, sampler=sampler_train,
         batch_size=args.batch_size,
@@ -360,8 +360,7 @@ def main(args):
         batch_size=int(1.5 * args.batch_size),
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
-        prefetch_factor=args.prefetch_factor if args.num_workers>0 else None,
-        drop_last=False
+        drop_last=False,
     )
 
     mixup_fn = None

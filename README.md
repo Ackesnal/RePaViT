@@ -12,12 +12,10 @@ cd RePaViT
 ```
 Then, install environments via Anaconda:
 ```
-conda create -n repavit python=3.10.14 -y
-conda activate repavit
-conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia -y
-pip install timm==1.0.3 einops ptflops wandb optuna
+conda create -n repavit python=3.10.14 -y && conda activate repavit
+pip install torch torchvision torchaudio timm==1.0.3 einops ptflops wandb optuna
 ```
-After the above installations, it is ready to run this repo. 
+After the above installations, it is ready to run this repo.
 
 We further utilize the [wandb](https://wandb.ai/site) for real-time track and training process visualization. The use of wandb is optional. However, you will need to register and login to wandb before using this functionality.
 ```
