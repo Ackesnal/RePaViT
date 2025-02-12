@@ -25,10 +25,6 @@ class Mlp(nn.Module):
             channel_idle=False,
             act_layer=nn.GELU,
             feature_norm="LayerNorm",
-            shortcut_gain=0.0,
-            std=1.0,
-            layer_scale=False,
-            init_values=1e-5,
             idle_ratio=0.75):
             
         super().__init__()
@@ -66,13 +62,6 @@ class Mlp(nn.Module):
         # Drop path
         self.drop_path = DropPath(drop_path) if drop_path > 0. else None
         ######################## ↑↑↑↑↑↑ ########################
-            
-        ######################## ↓↓↓↓↓↓ ########################
-        # Layer Scale
-        self.layer_scale = layer_scale
-        if self.layer_scale:
-            self.ls = nn.Parameter(torch.ones((self.dim_out)) * init_values)
-        ######################## ↑↑↑↑↑↑ ########################
         
     def forward(self, x):
         B, N, C = x.shape
@@ -92,7 +81,7 @@ class Mlp(nn.Module):
         if self.channel_idle:
             if self.act_channels == 0:
                 pass
-            elif self.act_channels < C:
+            elif self.act_channels < self.dim_hidden:
                 x = torch.concat((self.act(x[:,:,:self.act_channels]), x[:,:,self.act_channels:]), 
                                  dim=-1)
             else:
@@ -107,10 +96,6 @@ class Mlp(nn.Module):
         # FFN out
         x = self.fc2(x)
         
-        # Add Layer Scale (dim)
-        if self.layer_scale:
-            x = x * self.ls.unsqueeze(0).unsqueeze(0)
-            
         # Add DropPath
         x = self.drop_path(x) if self.drop_path is not None else x
         
@@ -128,7 +113,7 @@ class Mlp(nn.Module):
             weight = self.norm1.weight
             bias = self.norm1.bias
             
-            fc1_bias = self.fc1(-mean/std*weight+bias)
+            fc1_bias = self.fc1((-mean) / std * weight + bias)
             fc1_weight = self.fc1.weight / std[None, :] * weight[None, :]
             
             mean = self.norm2.running_mean
@@ -136,11 +121,8 @@ class Mlp(nn.Module):
             weight = self.norm2.weight
             bias = self.norm2.bias
             
-            fc2_bias = self.fc2(-mean/std*weight+bias)
+            fc2_bias = self.fc2((-mean) / std * weight + bias)
             fc2_weight = self.fc2.weight / std[None, :] * weight[None, :]
-            
-            if self.layer_scale:
-                fc2_weight = fc2_weight * self.ls[:, None]
         
         return fc1_bias, fc1_weight, fc2_bias, fc2_weight, self.act_channels
 
@@ -161,22 +143,35 @@ class RePaMlp(nn.Module):
         self.fc2 = nn.Linear(dim, act_channels)
         self.fc3 = nn.Linear(act_channels, dim, bias=False)
         self.act = act_layer()
+        self.act_channels = act_channels
         
         with torch.no_grad():
-            weight1 = fc1_weight[act_channels:, :].T @ fc2_weight[:, act_channels:].T + torch.eye(dim).to(fc1_weight.device)
-            weight2 = fc1_weight[:act_channels, :]
-            weight3 = fc2_weight[:, :act_channels] 
-            bias1 = (fc1_bias[act_channels:].unsqueeze(0) @ fc2_weight[:, act_channels:].T).squeeze() + fc2_bias
-            bias2 = fc1_bias[:act_channels]
-            
-            self.fc1.weight.copy_(weight1.T)
-            self.fc1.bias.copy_(bias1)
-            self.fc2.weight.copy_(weight2)
-            self.fc2.bias.copy_(bias2)
-            self.fc3.weight.copy_(weight3)
+            if act_channels == 0:
+                weight1 = fc1_weight.T @ fc2_weight.T + torch.eye(dim).to(fc1_weight.device)
+                bias1 = (fc1_bias.unsqueeze(0) @ fc2_weight.T).squeeze() + fc2_bias
+                self.fc1.weight.copy_(weight1.T)
+                self.fc1.bias.copy_(bias1)
+                del self.fc2
+                del self.fc3
+                del self.act
+            else:
+                weight1 = fc1_weight[act_channels:, :].T @ fc2_weight[:, act_channels:].T + torch.eye(dim).to(fc1_weight.device)
+                weight2 = fc1_weight[:act_channels, :]
+                weight3 = fc2_weight[:, :act_channels] 
+                bias1 = (fc1_bias[act_channels:].unsqueeze(0) @ fc2_weight[:, act_channels:].T).squeeze() + fc2_bias
+                bias2 = fc1_bias[:act_channels]
+                
+                self.fc1.weight.copy_(weight1.T)
+                self.fc1.bias.copy_(bias1)
+                self.fc2.weight.copy_(weight2)
+                self.fc2.bias.copy_(bias2)
+                self.fc3.weight.copy_(weight3)
         
     def forward(self, x):
-        x = self.fc3(self.act(self.fc2(x))) + self.fc1(x)
+        if self.act_channels == 0:
+            x = self.fc1(x)
+        else:
+            x = self.fc3(self.act(self.fc2(x))) + self.fc1(x)
         return x
                     
         
@@ -188,13 +183,7 @@ class Attention(nn.Module):
                  bias=True,
                  qk_scale=None, 
                  attn_drop=0.,
-                 drop_path=0., 
-                 feature_norm="LayerNorm",
-                 po_shortcut=False,
-                 shortcut_gain=1.0,
-                 std=1.0,
-                 layer_scale=False,
-                 init_values=1e-5):
+                 drop_path=0.,):
                  
         super().__init__()
         
@@ -213,240 +202,70 @@ class Attention(nn.Module):
         ######################## ↑↑↑↑↑↑ ########################
         
         ######################## ↓↓↓↓↓↓ ########################
-        # Per-operation shortcut
-        self.po_shortcut = po_shortcut
-        if self.po_shortcut:
-            self.gain1 = nn.Parameter(torch.ones((1))*shortcut_gain, 
-                                      requires_grad=False)
-            self.gain2 = nn.Parameter(torch.ones((1))*shortcut_gain, 
-                                      requires_grad=False)
-            self.gain3 = nn.Parameter(torch.ones((1))*shortcut_gain, 
-                                      requires_grad=False)
-        ######################## ↑↑↑↑↑↑ ########################
-        
-        ######################## ↓↓↓↓↓↓ ########################
         # Drop path
         self.drop_path = DropPath(drop_path) if drop_path > 0. else None
         # Attention drop
         self.attn_drop = attn_drop
         ######################## ↑↑↑↑↑↑ ########################
         
-        ######################## ↓↓↓↓↓↓ ########################
-        # Normalization
-        if self.po_shortcut:
-            self.feature_norm = feature_norm
-            if self.feature_norm == "LayerNorm":
-                self.norm1 = nn.LayerNorm(self.dim)
-                self.norm2 = nn.LayerNorm(self.dim)
-                self.norm3 = nn.LayerNorm(self.dim)
-            elif self.feature_norm == "BatchNorm":
-                self.norm1 = nn.BatchNorm1d(self.dim)
-                self.norm2 = nn.BatchNorm1d(self.dim)
-                self.norm3 = nn.BatchNorm1d(self.dim)
-            elif self.feature_norm == "EmpiricalSTD":
-                self.std1 = nn.Parameter(torch.ones((1))*std)
-                self.std2 = nn.Parameter(torch.ones((1))*std)
-                self.std3 = nn.Parameter(torch.ones((1))*std)
-        else:
-            self.norm = nn.LayerNorm(self.dim)
-        ######################## ↑↑↑↑↑↑ ########################
+        self.norm = nn.LayerNorm(self.dim)
+            
+    def forward(self, x):        
+        # Shortcut
+        shortcut = x
+            
+        # Feature normalization
+        x = self.norm(x)
+            
+        # Project to QKV
+        qkv = self.qkv(x)
+        qkv = rearrange(qkv, 'b n (k nh hc) -> k b nh n hc', k=3, nh=self.num_head)
+        q, k, v = qkv.unbind()
+            
+        # Self-attention
+        x = nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop)
+                
+        # Reshape x back to input shape
+        x = rearrange(x, 'b nh n hc -> b n (nh hc)')
+                
+        # Output linear projection
+        x = self.proj(x)
         
-        ######################## ↓↓↓↓↓↓ ########################
-        # Layer Scale
-        self.layer_scale = layer_scale
-        if self.layer_scale:
-            self.ls = nn.Parameter(torch.ones((dim)) * init_values)
-        ######################## ↑↑↑↑↑↑ ########################
+        # Add DropPath
+        x = self.drop_path(x) if self.drop_path is not None else x
             
-    def forward(self, x):
-        B, N, C = x.shape
-        
-        if not self.po_shortcut:
-            # Shortcut
-            shortcut = x
-            
-            # Feature normalization
-            x = self.norm(x)
-            
-            # Project to QKV
-            qkv = self.qkv(x)
-            qkv = rearrange(qkv, 'b n (k nh hc) -> k b nh n hc', k=3, nh=self.num_head)
-            q, k, v = qkv.unbind()
-            
-            # Self-attention
-            x = nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop)
+        # Add shortcut
+        x = x + shortcut
                 
-            # Reshape x back to input shape
-            x = rearrange(x, 'b nh n hc -> b n (nh hc)')
-                
-            # Output linear projection
-            x = self.proj(x)
-            
-            # Add layer scale
-            if self.layer_scale:
-                x = x * self.ls
-            
-            # Add DropPath
-            x = self.drop_path(x) if self.drop_path is not None else x
-            
-            # Add shortcut
-            x = x + shortcut
-                
-        elif self.po_shortcut:
-            # Shortcut 1
-            shortcut = x
-            
-            # Feature normalization
-            if self.feature_norm == "LayerNorm":
-                x = self.norm1(x)
-            elif self.feature_norm == "BatchNorm":
-                x = self.norm1(x.transpose(-1,-2)).transpose(-1,-2)
-            elif self.feature_norm == "EmpiricalSTD":
-                x = x / self.std1
-            else:
-                pass
-            
-            # Project to QKV
-            qkv = self.qkv(x)
-            qkv = rearrange(qkv, 'b n (k nh hc) -> k b nh n hc', k=3, nh=self.num_head)
-            q, k, v = qkv[0], qkv[1], qkv[2]
-            
-            # Add shortcut 1
-            v = rearrange(v, 'b nh n hc -> b n (nh hc)')
-            v = v * self.gain1
-            v = self.drop_path(v) if self.drop_path is not None else v
-            v = v + shortcut
-            
-            # Shortcut 2
-            shortcut = v
-            
-            # Feature normalization
-            if self.feature_norm == "LayerNorm":
-                v = self.norm2(v)
-            elif self.feature_norm == "BatchNorm":
-                v = self.norm2(v.transpose(-1,-2)).transpose(-1,-2)
-            elif self.feature_norm == "EmpiricalSTD":
-                v = v / self.std2
-            else:
-                pass
-                
-            # Self-attention
-            v = rearrange(v, 'b n (nh hc) -> b nh n hc', nh=self.num_head)
-            x = nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop)
-                
-            # Reshape x back to input shape
-            x = rearrange(x, 'b nh n hc -> b n (nh hc)')
-            
-            # Add shortcut 2 
-            x = x * self.gain2
-            x = self.drop_path(x) if self.drop_path is not None else x
-            x = x + shortcut
-                
-            # Shortcut 3
-            shortcut = x
-            
-            # Feature normalization
-            if self.feature_norm == "LayerNorm":
-                x = self.norm3(x)
-            elif self.feature_norm == "BatchNorm":
-                x = self.norm3(x.transpose(-1,-2)).transpose(-1,-2)
-            elif self.feature_norm == "EmpiricalSTD":
-                x = x / self.std3
-            else:
-                pass
-            
-            # Output linear projection
-            x = self.proj(x)
-                
-            # Add shortcut 3 
-            x = x * self.gain3
-            x = self.drop_path(x) if self.drop_path is not None else x
-            x = x + shortcut
-        ######################### ↑↑↑ Self-attention ↑↑↑ ##########################
-        #if x.get_device() == 0:
-            #print("x after mhsa:", x.std(-1).mean().item(), x.mean().item(), x.max().item(), x.min().item())
-            #print("Shortcut gain", self.gain1.data.item(), self.gain2.data.item(), self.gain3.data.item())
         return x
         
     def reparam(self):
         return
 
-
-
-class RePaAttention(nn.Module):
-    def __init__(self, 
-                 dim, 
-                 num_head,
-                 q_weight=None,
-                 k_weight=None,
-                 v_weight=None,
-                 q_bias=None,
-                 k_bias=None,
-                 v_bias=None
-                 ):
-        super().__init__()
-        
-        # Hyperparameters
-        self.num_head = num_head
-        self.dim_head = dim // num_head
-        self.dim = dim
-        self.scale = self.dim_head ** -0.5 # scale
-        
-        self.qkv = nn.Linear(dim, dim*3)
-        self.out = nn.Linear(dim, dim)
-        self.norm = nn.LayerNorm(dim)
-        
-    def forward(self, x):
-        B, N, C = x.shape
-        shortcut = x
-        x = self.norm(x)
-        qkv = self.qkv(x).reshape(B, N, 3, self.num_head, self.dim_head).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2]
-        
-        # Calculate self-attention
-        x = nn.functional.scaled_dot_product_attention(q, k, v) # B, nh, N, C//nh
-        x = rearrange(x, 'b nh n hc -> b n (nh hc)') # B, N, C
-        
-        # x = self.ffn3(self.act(self.ffn2(x))) + self.ffn1(x)
-        return self.out(x) + shortcut
-            
         
 
 class Block(nn.Module):
     # taken from https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/vision_transformer.py
     def __init__(self, dim, num_head, mlp_ratio=4., bias=False, qk_scale=None, drop=0., attn_drop=0.,
-                 drop_path=0., act_layer=nn.GELU, channel_idle=False, po_shortcut=False, idle_ratio=0.75,
-                 feature_norm="LayerNorm", shortcut_gain=1.0, std=1.0, layer_scale=False, init_values=1e-5): 
+                 drop_path=0., act_layer=nn.GELU, channel_idle=False, idle_ratio=0.75, feature_norm="LayerNorm"): 
         super().__init__()
         
-        if layer_scale:
-            assert shortcut_gain == 1.0, "Shortcut gain must be set to 1.0 when using LayerScale"
-            
         dim_hidden = int(dim * mlp_ratio)
         self.rep = False
         self.dim = dim
         self.num_head = num_head
         self.act_layer = act_layer
         
-        if po_shortcut:
-            self.attn = Attention(dim=dim, num_head=num_head, bias=bias, qk_scale=qk_scale, 
-                                  attn_drop=attn_drop, drop_path=drop_path, feature_norm=feature_norm,
-                                  po_shortcut=po_shortcut, shortcut_gain=shortcut_gain, std=std, 
-                                  layer_scale=layer_scale, init_values=init_values)
-        else:
-            self.attn = Attention(dim, num_head=num_head, bias=bias, qk_scale=qk_scale, 
-                                  attn_drop=attn_drop, drop_path=drop_path, 
-                                  layer_scale=layer_scale, init_values=init_values)
+        self.attn = Attention(dim, num_head=num_head, bias=bias, qk_scale=qk_scale, 
+                              attn_drop=attn_drop, drop_path=drop_path)
         
         if channel_idle:
             self.mlp = Mlp(dim_in=dim, dim_hidden=dim_hidden, bias=bias, act_layer=act_layer, 
-                           drop_path=drop_path, feature_norm=feature_norm, std=std, 
-                           channel_idle=channel_idle, shortcut_gain=shortcut_gain, 
-                           layer_scale=layer_scale, init_values=init_values, idle_ratio=idle_ratio)
+                           drop_path=drop_path, feature_norm=feature_norm, 
+                           channel_idle=channel_idle, idle_ratio=idle_ratio)
         else:
             self.mlp = Mlp(dim_in=dim, dim_hidden=dim_hidden, bias=bias, 
-                           act_layer=act_layer, drop_path=drop_path, 
-                           layer_scale=layer_scale, init_values=init_values)
+                           act_layer=act_layer, drop_path=drop_path)
     
     def forward(self, x):
         x = self.attn(x)
@@ -489,9 +308,8 @@ class Transformer(VisionTransformer):
             block_fn=Block,
             feature_norm='LayerNorm',
             channel_idle=False,
-            po_shortcut=False,
-            shortcut_gain=0.0,
-            idle_ratio=0.75):
+            idle_ratio=0.75,
+            heuristic="static"):
         
         super().__init__(
             img_size=img_size,
@@ -516,8 +334,11 @@ class Transformer(VisionTransformer):
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
         std = [x.item() for x in torch.logspace(start=0, end=2, steps=depth, base=2)]
         
-        idle_ratio = [(2*idle_ratio-1) + (2-2*idle_ratio) / (depth-1) * (i+1) for i in range(depth-1)] + [0.0]
-        
+        if heuristic.strip().lower() in ["none", "static", ""]:
+            idle_ratio = [idle_ratio for i in range(depth)]
+        elif heuristic.strip().lower() in ["linear"]:
+            idle_ratio = [(2*idle_ratio-1) + (2-2*idle_ratio) / (depth-1) * (i+1) for i in range(depth-1)] + [0.0]
+        print(idle_ratio)
         self.blocks = nn.Sequential(*[
             block_fn(
                 dim=embed_dim,
@@ -528,13 +349,8 @@ class Transformer(VisionTransformer):
                 attn_drop=attn_drop_rate,
                 drop_path=dpr[i],
                 act_layer=act_layer,
-                channel_idle=channel_idle,
-                po_shortcut=po_shortcut,
                 feature_norm=feature_norm,
-                shortcut_gain=shortcut_gain,
-                std=std[i],
-                init_values=init_values,
-                layer_scale=layer_scale,
+                channel_idle=channel_idle,
                 idle_ratio=idle_ratio[i]
             )
             for i in range(depth)])
@@ -572,13 +388,13 @@ def RePaViT_Tiny_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pret
     return model
     
     
-    
 @register_model
 def RePaViT_Small_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     model = Transformer(patch_size=16, embed_dim=384, depth=12, pre_norm=True,
                         num_heads=6, mlp_ratio=4, qkv_bias=True, fc_norm=False,
                         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
+
     
 @register_model
 def RePaViT_Base_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
@@ -587,12 +403,14 @@ def RePaViT_Base_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pret
                         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
     
+    
 @register_model
 def RePaViT_Large_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     model = Transformer(patch_size=16, embed_dim=1024, depth=24, pre_norm=True,
                         num_heads=16, mlp_ratio=4, qkv_bias=True, fc_norm=False,
                         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
+
     
 @register_model
 def RePaViT_Huge_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):

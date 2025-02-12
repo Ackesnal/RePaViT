@@ -37,6 +37,7 @@ import repamlpmixer
 import repaemo
 
 
+
 def get_args_parser():
     parser = argparse.ArgumentParser('DeiT training and evaluation script', add_help=False)
     parser.add_argument('--batch-size', default=64, type=int)
@@ -166,6 +167,7 @@ def get_args_parser():
     parser.add_argument('--inat-category', default='name',
                         choices=['kingdom', 'phylum', 'class', 'order', 'supercategory', 'family', 'genus', 'name'],
                         type=str, help='semantic granularity')
+    parser.add_argument('--rocksdb', type=str, default=None)
     parser.add_argument('--prefetch_factor', default=2, type=int)
 
     parser.add_argument('--output_dir', default='',
@@ -192,33 +194,24 @@ def get_args_parser():
                         help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
     
+    # Speed tests and time profiling
     parser.add_argument('--test_speed', action='store_true')
     parser.add_argument('--only_test_speed', action='store_true')
     parser.add_argument('--latency_profile', action='store_true') 
     
-    parser.add_argument('--signal_test', action='store_true')
+    # Wandb
     parser.add_argument('--use_wandb', default=False, action='store_true')
     parser.add_argument('--wandb_no_loss', default=False, action='store_true')
     parser.add_argument('--wandb_suffix', default="", type=str)
     
-    # NFViT Ablation Augments
-    parser.add_argument('--shortcut_type', default='PerLayer', type=str, choices=['PerLayer', 'PerOperation'])
-    parser.add_argument('--affected_layers', default='None', type=str, choices=['None', 'Both', 'MHSA', 'FFN'])
+    # RePaViT arguments
     parser.add_argument('--feature_norm', default='LayerNorm', type=str, choices=['LayerNorm', 'BatchNorm', 'EmpiricalSTD', 'None'])
-    parser.add_argument('--weight_standardization', default=False, action='store_true')
     parser.add_argument('--channel_idle', default=False, action='store_true')
     parser.add_argument('--idle_ratio', default=0.75, type=float)
-    parser.add_argument('--po_shortcut', default=False, action='store_true')
-    parser.add_argument('--shortcut_gain', type=float, default=1.0)
-    parser.add_argument('--gamma', type=float, default=0.1)
-    parser.add_argument('--finetune_gain', type=int, default=300)
-    parser.add_argument('--finetune_gamma', type=int, default=300)
-    parser.add_argument('--finetune_std', type=int, default=300)
+    parser.add_argument('--heuristic', type=str, default="static")
     parser.add_argument('--activation', default='GELU', type=str, choices=['ReLU', 'GELU', 'Sigmoid', 'LeakyReLU', 'SiLU'])
     parser.add_argument('--reparam', default=False, action='store_true')
     
-    parser.add_argument('--init_values', type=float, default=1e-5)
-    parser.add_argument('--layer_scale', default=False, action='store_true')
     return parser
 
 
@@ -390,14 +383,11 @@ def main(args):
         drop_rate=args.drop,
         drop_path_rate=args.drop_path,
         drop_block_rate=None,
-        channel_idle=args.channel_idle,
-        po_shortcut=args.po_shortcut,
-        feature_norm=args.feature_norm,
-        shortcut_gain=args.shortcut_gain,
         act_layer=act_layer,
-        layer_scale=args.layer_scale,
-        init_values=args.init_values,
-        idle_ratio=args.idle_ratio
+        feature_norm=args.feature_norm,
+        channel_idle=args.channel_idle,
+        idle_ratio=args.idle_ratio,
+        heuristic=args.heuristic
     )
     
     if args.finetune:
@@ -574,7 +564,7 @@ def main(args):
             checkpoint = torch.hub.load_state_dict_from_url(
                 args.resume, map_location='cpu', check_hash=True)
         else:
-            checkpoint = torch.load(args.resume, map_location='cpu')
+            checkpoint = torch.load(args.resume, map_location='cpu', weights_only=False)
         
         """
         all_keys = list(checkpoint['model'].keys())
@@ -627,8 +617,6 @@ def main(args):
         name = args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_"
         if args.channel_idle:
             name = name + "ChannelIdle" + "_"
-        if args.po_shortcut:
-            name = name + "POShortcut" + "_"
         name = name + str(random.randint(0, 10000))
         wandb.init(
             # set the wandb project where this run will be logged
@@ -637,9 +625,7 @@ def main(args):
             # track hyperparameters and run metadata
             config={
             "model": args.model,
-            "layer": "FFN" if args.channel_idle and not args.po_shortcut else "MHSA" if not args.channel_idle and args.po_shortcut else "Both" if args.channel_idle and args.po_shortcut else "None",
-            #"shortcut_gain": args.shortcut_gain,
-            "norm_type": args.feature_norm,
+            "ffn_norm": args.feature_norm,
             "lr": args.lr,
             "min-lr": args.min_lr,
             "warmup-lr": args.warmup_lr,
@@ -660,38 +646,6 @@ def main(args):
     use_amp=True
     for epoch in range(args.start_epoch, args.epochs):
         while True:
-            if args.feature_norm == "Empirical" and epoch == args.finetune_std:
-                for name, param in model.module.named_parameters():
-                    if "std" in name:
-                        param.requires_grad_(True)
-                            
-                model_without_ddp = model.module
-                optimizer = create_optimizer(args, model_without_ddp)
-                loss_scaler = utils.NativeScalerWithGradNormCount()
-                                
-                lr_scheduler, num_epochs = create_scheduler_v2(
-                            optimizer,
-                            **scheduler_kwargs(args),
-                            updates_per_epoch=args.updates_per_epoch,
-                )
-                lr_scheduler.step(epoch*len(data_loader_train) // args.accumulation_steps)
-            if (args.po_shortcut or args.channel_idle) and epoch == args.finetune_gain:
-                for name, param in model.module.named_parameters():
-                    if "gain" in name:
-                        param.requires_grad_(True)
-                            
-                model_without_ddp = model.module
-                optimizer = create_optimizer(args, model_without_ddp)
-                loss_scaler = utils.NativeScalerWithGradNormCount()
-                                
-                lr_scheduler, num_epochs = create_scheduler_v2(
-                            optimizer,
-                            **scheduler_kwargs(args),
-                            updates_per_epoch=args.updates_per_epoch,
-                )
-                lr_scheduler.step(epoch*len(data_loader_train) // args.accumulation_steps)
-                    
-                        
             if args.distributed:
                 data_loader_train.sampler.set_epoch(epoch)
             
@@ -750,7 +704,7 @@ def main(args):
                         'scaler': loss_scaler.state_dict(),
                         'args': args,
                     }, checkpoint_path)
-                    
+                
                 if epoch % 10 == 0 and epoch > 0:
                     checkpoint_paths = [output_dir / f'checkpoint{epoch}epoch.pth']
                     for checkpoint_path in checkpoint_paths:
