@@ -8,15 +8,13 @@ Mostly copy-paste from torchvision references.
 import io
 import os
 import time
-from collections import defaultdict, deque
 import datetime
-from datetime import timedelta
+
+from collections import defaultdict, deque
 
 import torch
 import torch.distributed as dist
 from timm.utils.clip_grad import dispatch_clip_grad
-
-import copy
 
 
 class SmoothedValue(object):
@@ -37,13 +35,14 @@ class SmoothedValue(object):
         self.count += n
         self.total += value * n
 
-    def synchronize_between_processes(self):
+    def synchronize_between_processes(self, device):
         """
         Warning: does not synchronize the deque!
         """
         if not is_dist_avail_and_initialized():
             return
-        t = torch.tensor([self.count, self.total], dtype=torch.float64, device='cuda')
+        t = torch.tensor([self.count, self.total], dtype=torch.float64, device=device)
+        torch.cuda.synchronize()
         dist.barrier()
         dist.all_reduce(t)
         t = t.tolist()
@@ -82,9 +81,10 @@ class SmoothedValue(object):
 
 
 class MetricLogger(object):
-    def __init__(self, delimiter="\t"):
+    def __init__(self, device, delimiter="\t"):
         self.meters = defaultdict(SmoothedValue)
         self.delimiter = delimiter
+        self.device = device
 
     def update(self, **kwargs):
         for k, v in kwargs.items():
@@ -111,7 +111,7 @@ class MetricLogger(object):
 
     def synchronize_between_processes(self):
         for meter in self.meters.values():
-            meter.synchronize_between_processes()
+            meter.synchronize_between_processes(self.device)
 
     def add_meter(self, name, meter):
         self.meters[name] = meter
@@ -208,41 +208,58 @@ def get_rank():
     return dist.get_rank()
 
 
-def is_main_process():
-    return get_rank() == 0
-
-
 def save_on_master(*args, **kwargs):
-    if is_main_process():
+    if args.global_rank == 0:
         torch.save(*args, **kwargs)
 
 
+def world_info_from_env():
+    local_rank = 0
+    for v in ('SLURM_LOCALID', 'LOCAL_RANK', 'MPI_LOCALRANKID', 'OMPI_COMM_WORLD_LOCAL_RANK'):
+        if v in os.environ:
+            local_rank = int(os.environ[v])
+            break
+    global_rank = 0
+    for v in ('SLURM_PROCID', 'RANK', 'PMI_RANK', 'OMPI_COMM_WORLD_RANK'):
+        if v in os.environ:
+            global_rank = int(os.environ[v])
+            break
+    world_size = 1
+    for v in ('SLURM_NTASKS', 'WORLD_SIZE', 'PMI_SIZE', 'OMPI_COMM_WORLD_SIZE'):
+        if v in os.environ:
+            world_size = int(os.environ[v])
+            break
+
+    return local_rank, global_rank, world_size
+
+
 def init_distributed_mode(args):
-    if 'SLURM_PROCID' in os.environ and int(os.environ['SLURM_NNODES']) > 1:
-        args.rank = int(os.environ['SLURM_PROCID'])
-        args.gpu = args.rank % torch.cuda.device_count()
-        args.world_size = int(os.environ['SLURM_NNODES']) * int(os.environ['SLURM_NTASKS_PER_NODE'])
-    elif 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
-        args.rank = int(os.environ["RANK"])
-        args.world_size = int(os.environ['WORLD_SIZE'])
-        args.gpu = int(os.environ['LOCAL_RANK'])
-    else:
-        print('Not using distributed mode')
+    
+    args.local_rank, args.global_rank, args.world_size = world_info_from_env()
+    
+    if args.world_size == 1:
         args.distributed = False
+        print('Not using distributed mode')
         return
+    else:
+        args.distributed = True
+        print('Initializing distributed mode')
 
-    args.distributed = True
-
-    torch.cuda.set_device(args.gpu)
+    args.device = f'cuda:{args.local_rank}'
+    torch.cuda.device(args.device)
     args.dist_backend = 'nccl'
     print('| distributed init (rank {}): {}'.format(
-        args.rank, args.dist_url), flush=True)
+        args.global_rank, args.dist_url), flush=True)
     
-    torch.distributed.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
-                                         world_size=args.world_size, rank=args.rank,
-                                         timeout=timedelta(minutes=30))
+    torch.distributed.init_process_group(
+        backend=args.dist_backend, 
+        init_method=args.dist_url,
+        world_size=args.world_size, 
+        rank=args.global_rank,
+    )
+    
     torch.distributed.barrier()
-    setup_for_distributed(args.rank == 0)
+    setup_for_distributed(args.global_rank == 0)
 
 
 

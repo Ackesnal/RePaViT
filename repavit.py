@@ -11,6 +11,8 @@ from timm.layers import DropPath, trunc_normal_, PatchEmbed
 import math
 import torch.autograd.profiler as profiler
 
+
+
 class Mlp(nn.Module):
     """ MLP as used in Vision Transformer, MLP-Mixer and related networks
     """
@@ -46,7 +48,7 @@ class Mlp(nn.Module):
         ######################## ↓↓↓↓↓↓ ########################
         # Channel-idle
         self.channel_idle = channel_idle
-        self.act_channels = int(dim_hidden * (1-idle_ratio))
+        self.act_channels = math.ceil(dim_hidden * (1-idle_ratio))
         ######################## ↑↑↑↑↑↑ ########################
         
         ######################## ↓↓↓↓↓↓ ########################
@@ -64,7 +66,7 @@ class Mlp(nn.Module):
         ######################## ↑↑↑↑↑↑ ########################
         
     def forward(self, x):
-        B, N, C = x.shape
+        self.input = x
         ######################## ↓↓↓ 2-layer MLP ↓↓↓ ########################
         shortcut = x # B, N, C
         
@@ -100,9 +102,10 @@ class Mlp(nn.Module):
         x = self.drop_path(x) if self.drop_path is not None else x
         
         x = x + shortcut
-        ######################## ↑↑↑ 2-layer MLP ↑↑↑ ########################
-        #if x.get_device() == 0:
-            #print("x after ffn:", x.std(-1).mean().item(), x.mean().item(), x.max().item(), x.min().item())
+        # ######################## ↑↑↑ 2-layer MLP ↑↑↑ ########################
+        # if x.get_device() == 0:
+        #     print("x grad after ffn:", self.fc2.weight.grad)
+            # print("x after ffn:", x.std(-1).mean().item(), x.mean().item(), x.max().item(), x.min().item())
         return x
         
     def reparam(self):
@@ -125,7 +128,7 @@ class Mlp(nn.Module):
             fc2_weight = self.fc2.weight / std[None, :] * weight[None, :]
         
         return fc1_bias, fc1_weight, fc2_bias, fc2_weight, self.act_channels
-
+            
 
 
 class RePaMlp(nn.Module):
@@ -238,9 +241,6 @@ class Attention(nn.Module):
         x = x + shortcut
                 
         return x
-        
-    def reparam(self):
-        return
 
         
 
@@ -272,12 +272,13 @@ class Block(nn.Module):
         x = self.mlp(x)
         return x
     
-    def reparam(self):
+    def reparam(self, layer):
+        print(f"Layer {layer} reparamed")
         fc1_bias, fc1_weight, fc2_bias, fc2_weight, act_channels = self.mlp.reparam()
         del self.mlp
         self.mlp = RePaMlp(fc1_bias, fc1_weight, fc2_bias, fc2_weight, act_channels, self.act_layer)
         return
-        
+
 
 
 class Transformer(VisionTransformer):
@@ -332,13 +333,13 @@ class Transformer(VisionTransformer):
             drop_path_rate=drop_path_rate)
             
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
-        std = [x.item() for x in torch.logspace(start=0, end=2, steps=depth, base=2)]
         
         if heuristic.strip().lower() in ["none", "static", ""]:
             idle_ratio = [idle_ratio for i in range(depth)]
         elif heuristic.strip().lower() in ["linear"]:
             idle_ratio = [(2*idle_ratio-1) + (2-2*idle_ratio) / (depth-1) * (i+1) for i in range(depth-1)] + [0.0]
-        print(idle_ratio)
+        print("Idle Ratios:", idle_ratio)
+        
         self.blocks = nn.Sequential(*[
             block_fn(
                 dim=embed_dim,
@@ -358,30 +359,15 @@ class Transformer(VisionTransformer):
         self.num_head = num_heads
         self.dim_head = embed_dim//self.num_head
         self.pre_norm = pre_norm
-        self._init_standard_weights()
+        self.init_weights()
         
-    def _init_standard_weights(self):
-        for name, param in self.named_parameters():
-            if "norm" in name:
-                if "weight" in name:
-                    nn.init.constant_(param, 1.0)
-                elif "bias" in name:
-                    nn.init.constant_(param, 0.0)
-            else:
-                if "weight" in name:
-                    trunc_normal_(param, mean=0.0, std=.02, a=-2, b=2)
-                    # param.data.mul_(0.67*math.pow(12, -0.25))
-                elif "bias" in name:
-                    nn.init.constant_(param, 0.0)
-                
     def reparam(self):
-        for blk in self.blocks:
-            blk.reparam()
-            
+        for layer, blk in enumerate(self.blocks):
+            blk.reparam(layer)
             
         
 @register_model
-def RePaViT_Tiny_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+def RePaViT_Tiny(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     model = Transformer(patch_size=16, embed_dim=192, depth=12, pre_norm=True,
                         num_heads=3, mlp_ratio=4, qkv_bias=True, fc_norm=False,
                         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
@@ -389,7 +375,7 @@ def RePaViT_Tiny_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pret
     
     
 @register_model
-def RePaViT_Small_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+def RePaViT_Small(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     model = Transformer(patch_size=16, embed_dim=384, depth=12, pre_norm=True,
                         num_heads=6, mlp_ratio=4, qkv_bias=True, fc_norm=False,
                         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
@@ -397,7 +383,7 @@ def RePaViT_Small_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pre
 
     
 @register_model
-def RePaViT_Base_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+def RePaViT_Base(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     model = Transformer(patch_size=16, embed_dim=768, depth=12, pre_norm=True,
                         num_heads=12, mlp_ratio=4, qkv_bias=True, fc_norm=False,
                         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
@@ -405,7 +391,7 @@ def RePaViT_Base_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pret
     
     
 @register_model
-def RePaViT_Large_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+def RePaViT_Large(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     model = Transformer(patch_size=16, embed_dim=1024, depth=24, pre_norm=True,
                         num_heads=16, mlp_ratio=4, qkv_bias=True, fc_norm=False,
                         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
