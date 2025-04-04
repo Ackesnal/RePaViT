@@ -400,7 +400,7 @@ def RePaViT_Large(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=
 
     
 @register_model
-def RePaViT_Huge_patch16_224_layer12(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
+def RePaViT_Huge(pretrained=False, pretrained_cfg=None, pretrained_cfg_overlay=None, **kwargs):
     model = Transformer(patch_size=16, embed_dim=1280, depth=32, pre_norm=True,
                         num_heads=16, mlp_ratio=4, qkv_bias=True, fc_norm=False,
                         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
