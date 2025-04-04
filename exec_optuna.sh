@@ -18,13 +18,13 @@ WANDB_MODE=online torchrun --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr
 --num_workers=20 \
 --epochs=100 \
 --dist_eval \
---data_path=/path/to/imagenet \
---output_dir=/path/to/optuna_study/output \
 --channel_idle \
---idle_ratio=0.5 \
+--idle_ratio=0.75 \
 --feature_norm=BatchNorm \
 --optuna_resume \
 --optuna_ntrials=20 \
+--data_path=/path/to/imagenet \
+--output_dir=/path/to/optuna_study/output
 
 
 # WANDB_MODE=[online, offline, disabled] -> 设定是否要联网同步
