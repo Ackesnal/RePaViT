@@ -209,7 +209,7 @@ def get_rank():
 
 
 def save_on_master(*args, **kwargs):
-    if args.global_rank == 0:
+    if args[0]['args'].global_rank == 0:
         torch.save(*args, **kwargs)
 
 

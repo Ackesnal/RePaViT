@@ -649,8 +649,7 @@ def main(args):
                     'epoch': epoch,
                     'model_ema': get_state_dict(model_ema),
                     'scaler': loss_scaler.state_dict(),
-                    'args': args,
-                    'global_rank': args.global_rank
+                    'args': args
                 }, checkpoint_path)
             
             if (epoch+1) % args.save_freq == 0:
@@ -663,8 +662,7 @@ def main(args):
                         'epoch': epoch,
                         'model_ema': get_state_dict(model_ema),
                         'scaler': loss_scaler.state_dict(),
-                        'args': args,
-                        'global_rank': args.global_rank
+                        'args': args
                     }, checkpoint_path)
         
         test_stats = evaluate(data_loader_val, model, args.device, args)
@@ -683,8 +681,7 @@ def main(args):
                         'epoch': epoch,
                         'model_ema': get_state_dict(model_ema),
                         'scaler': loss_scaler.state_dict(),
-                        'args': args,
-                        'global_rank': args.global_rank
+                        'args': args
                     }, checkpoint_path)
             
         print(f'Max accuracy: {max_accuracy:.2f}%')
@@ -697,7 +694,7 @@ def main(args):
                         'epoch': epoch,
                         'n_parameters': n_parameters}
             
-        if args.output_dir and utils.is_main_process():
+        if args.output_dir and args.global_rank == 0:
             with (output_dir / "log.txt").open("a") as f:
                 f.write(json.dumps(log_stats) + "\n")
     
