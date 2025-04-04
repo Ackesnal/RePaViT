@@ -595,7 +595,7 @@ def main(args):
     max_accuracy = 0.0
     
     if args.global_rank == 0 and args.wandb:
-        project_name = f'{args.model}_{args.wandb_suffix}'
+        project_name = f'{args.model}_{args.wandb_suffix}' if args.wandb_suffix is not None else f'{args.model}'
         trial_name = f'{args.model}_{random.randint(0, 10000):04d}_{datetime.date.today()}'
         wandb.init(
             # set the wandb project where this run will be logged

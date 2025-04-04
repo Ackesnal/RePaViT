@@ -181,8 +181,9 @@ def get_args_parser():
                         help='weight saving frequency (epochs)')
     
     # Wandb
-    parser.add_argument('--use_wandb', default=False, action='store_true')
-    parser.add_argument('--wandb_suffix', default="", type=str)
+    parser.add_argument('--wandb', default=False, action='store_true')
+    parser.add_argument('--wandb_suffix', default=None, type=str)
+    parser.add_argument('--wandb_entity', default=None, type=str)
     
     # Training specs
     parser.add_argument('--device', default='cuda',
@@ -474,11 +475,12 @@ def main_training(args):
     start_time = time.time()
     max_accuracy = 0.0
     
-    if args.global_rank == 0 and args.use_wandb:
-        project_name = f'{args.model}_{args.wandb_suffix}'
+    if args.global_rank == 0 and args.wandb:
+        project_name = f'{args.model}_{args.wandb_suffix}' if args.wandb_suffix is not None else f'{args.model}'
         trial_name = f'{args.model}_{random.randint(0, 10000):04d}_{datetime.date.today()}'
         wandb.init(
             # set the wandb project where this run will be logged
+            entity=args.wandb_entity,
             project=project_name,
             name=trial_name,
             # track hyperparameters and run metadata
@@ -561,7 +563,7 @@ def main_training(args):
             
         print(f'Max accuracy: {max_accuracy:.2f}%')
         
-        if args.global_rank == 0 and args.use_wandb:
+        if args.global_rank == 0 and args.wandb:
             wandb.log({"accuracy": test_stats["acc1"], "loss": train_stats["loss"],})
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
@@ -573,7 +575,7 @@ def main_training(args):
             with (output_dir / "log.txt").open("a") as f:
                 f.write(json.dumps(log_stats) + "\n")
     
-    if args.global_rank == 0 and args.use_wandb:
+    if args.global_rank == 0 and args.wandb:
         wandb.finish()
         
     total_time = time.time() - start_time
@@ -618,7 +620,6 @@ def objective(trial):
     args.warmup_epochs = config["warmup_epochs"]
     args.weight_decay = config["weight_decay"]
     args.drop_path = config["drop_path"]
-    args.use_wandb = True
     args.wandb_suffix = "Optuna" if args.wandb_suffix is None else args.wandb_suffix
     args.dist_eval = True
     args.unscale_lr = True

@@ -4,18 +4,15 @@
 #SBATCH --job-name=train
 #SBATCH --partition=gpu
 #SBATCH --cpus-per-task=32
-#SBATCH --gres=gpu:tesla-smx2:1
+#SBATCH --gres=gpu:4
 #SBATCH --mem-per-cpu=2G
 #SBATCH -o RePaViT_Small_out.txt
 #SBATCH -e RePaViT_Small_err.txt
 
-export WORLD_SIZE=$(($SLURM_NNODES * $SLURM_NTASKS_PER_NODE))
-export MASTER_PORT=15556
-export MASTER_ADDR=$(scontrol show hostname $SLURM_NODELIST | head -n 1)
-
+export WORLD_SIZE=$(($SLURM_NNODES * $SLURM_GPUS_ON_NODE))
 
 export BATCH_SIZE=$(echo "scale=0; 4096 / $WORLD_SIZE" | bc)
-WANDB_MODE=online torchrun --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT main.py \
+WANDB_MODE=online torchrun --nproc_per_node=$SLURM_GPUS_ON_NODE main.py \
 --model=RePaViT_Small \
 --batch_size=$BATCH_SIZE \
 --epochs=300 \
@@ -34,5 +31,6 @@ WANDB_MODE=online torchrun --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr
 --weight_decay=0.1444 \
 --opt=lamb \
 --drop_path=0.0938 \
---use_wandb \
+--wandb \
+--wandb_entity=ackesnal-ai \
 --wandb_suffix=full_300epoch
