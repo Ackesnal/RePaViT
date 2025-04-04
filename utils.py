@@ -215,12 +215,12 @@ def save_on_master(*args, **kwargs):
 
 def world_info_from_env():
     local_rank = 0
-    for v in ('SLURM_LOCALID', 'LOCAL_RANK', 'MPI_LOCALRANKID', 'OMPI_COMM_WORLD_LOCAL_RANK'):
+    for v in ('LOCAL_RANK', 'SLURM_LOCALID', 'MPI_LOCALRANKID', 'OMPI_COMM_WORLD_LOCAL_RANK'):
         if v in os.environ:
             local_rank = int(os.environ[v])
             break
     global_rank = 0
-    for v in ('SLURM_PROCID', 'RANK', 'PMI_RANK', 'OMPI_COMM_WORLD_RANK'):
+    for v in ('RANK', 'SLURM_PROCID', 'PMI_RANK', 'OMPI_COMM_WORLD_RANK'):
         if v in os.environ:
             global_rank = int(os.environ[v])
             break

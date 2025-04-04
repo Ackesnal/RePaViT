@@ -594,7 +594,7 @@ def objective(trial):
         args.warmup_lr = args.warmup_lr / args.accumulation_steps
         args.warmup_epochs = 20
         args.weight_decay = trial.suggest_float('weight_decay', 0., 0.2)
-        args.drop_path = trial.suggest_float('drop_path', 0.0, 0.5)
+        args.drop_path = trial.suggest_float('drop_path', 0., 0.5)
         
         config[0] = {
             "batch_size": args.batch_size,
