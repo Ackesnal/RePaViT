@@ -589,7 +589,7 @@ def main_training(args):
 def objective(trial):
     config = [None]
     if args.global_rank == 0:
-        args.batch_size = 1024 // args.world_size // args.accumulation_steps
+        args.batch_size = 4096 // args.world_size // args.accumulation_steps
         args.opt = trial.suggest_categorical("opt", ["lamb", "adamw", "lambw"])
         args.lr = trial.suggest_float('lr', 1e-4, 1e-1) / args.accumulation_steps
         args.min_lr = trial.suggest_float('min_lr', 0., 1e-5) / args.accumulation_steps
