@@ -650,6 +650,7 @@ def main(args):
                     'model_ema': get_state_dict(model_ema),
                     'scaler': loss_scaler.state_dict(),
                     'args': args,
+                    'global_rank': args.global_rank
                 }, checkpoint_path)
             
             if (epoch+1) % args.save_freq == 0:
@@ -663,6 +664,7 @@ def main(args):
                         'model_ema': get_state_dict(model_ema),
                         'scaler': loss_scaler.state_dict(),
                         'args': args,
+                        'global_rank': args.global_rank
                     }, checkpoint_path)
         
         test_stats = evaluate(data_loader_val, model, args.device, args)
@@ -682,6 +684,7 @@ def main(args):
                         'model_ema': get_state_dict(model_ema),
                         'scaler': loss_scaler.state_dict(),
                         'args': args,
+                        'global_rank': args.global_rank
                     }, checkpoint_path)
             
         print(f'Max accuracy: {max_accuracy:.2f}%')
