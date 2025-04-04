@@ -619,7 +619,7 @@ def objective(trial):
     args.weight_decay = config["weight_decay"]
     args.drop_path = config["drop_path"]
     args.use_wandb = True
-    args.wandb_suffix = "Optuna"
+    args.wandb_suffix = "Optuna" if args.wandb_suffix is None else args.wandb_suffix
     args.dist_eval = True
     args.unscale_lr = True
     
