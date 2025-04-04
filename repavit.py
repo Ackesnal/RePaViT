@@ -84,8 +84,9 @@ class Mlp(nn.Module):
             if self.act_channels == 0:
                 pass
             elif self.act_channels < self.dim_hidden:
-                x = torch.concat((self.act(x[:,:,:self.act_channels]), x[:,:,self.act_channels:]), 
-                                 dim=-1)
+                mask = torch.zeros_like(x, dtype=torch.bool)
+                mask[:, :, :self.act_channels] = True
+                x = torch.where(mask, self.act(x), x)
             else:
                 x = self.act(x)
         else:
