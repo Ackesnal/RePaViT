@@ -175,8 +175,9 @@ def get_args_parser():
                         help='weight saving frequency (epochs)')
     
     # Wandb
-    parser.add_argument('--use_wandb', default=False, action='store_true')
+    parser.add_argument('--wandb', default=False, action='store_true')
     parser.add_argument('--wandb_suffix', default="", type=str)
+    parser.add_argument('--wandb_entity', default="", type=str)
     
     # Training specs
     parser.add_argument('--device', default='cuda',
@@ -593,11 +594,12 @@ def main(args):
     start_time = time.time()
     max_accuracy = 0.0
     
-    if args.global_rank == 0 and args.use_wandb:
+    if args.global_rank == 0 and args.wandb:
         project_name = f'{args.model}_{args.wandb_suffix}'
         trial_name = f'{args.model}_{random.randint(0, 10000):04d}_{datetime.date.today()}'
         wandb.init(
             # set the wandb project where this run will be logged
+            entity=args.wandb_entity,
             project=project_name,
             name=trial_name,
             # track hyperparameters and run metadata
@@ -684,7 +686,7 @@ def main(args):
             
         print(f'Max accuracy: {max_accuracy:.2f}%')
         
-        if args.global_rank == 0 and args.use_wandb:
+        if args.global_rank == 0 and args.wandb:
             wandb.log({"accuracy": test_stats["acc1"], "loss": train_stats["loss"],})
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
@@ -696,7 +698,7 @@ def main(args):
             with (output_dir / "log.txt").open("a") as f:
                 f.write(json.dumps(log_stats) + "\n")
     
-    if args.global_rank == 0 and args.use_wandb:
+    if args.global_rank == 0 and args.wandb:
         wandb.finish()
         
     total_time = time.time() - start_time
