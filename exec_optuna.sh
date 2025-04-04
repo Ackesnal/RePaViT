@@ -13,7 +13,7 @@ export WORLD_SIZE=$(($SLURM_NNODES * $SLURM_NTASKS_PER_NODE))
 export MASTER_PORT=12777
 export MASTER_ADDR=$(scontrol show hostname $SLURM_NODELIST | head -n 1)
 
-WANDB_MODE=online srun torchrun --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT train_optuna.py \
+WANDB_MODE=online torchrun --nproc_per_node=$SLURM_NTASKS_PER_NODE --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT train_optuna.py \
 --model=RePaViT_Small \
 --num_workers=20 \
 --epochs=100 \
