@@ -2,7 +2,6 @@
 # All rights reserved.
 import os
 import time
-import yaml
 import json
 import utils
 import wandb
@@ -596,28 +595,28 @@ def main(args):
     max_accuracy = 0.0
     
     if args.global_rank == 0 and args.use_wandb:
-        name = args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_"
-        if args.channel_idle:
-            name = name + "ChannelIdle" + "_"
-        name = name + str(random.randint(0, 10000))
+        project_name = f'{args.model}_{args.wandb_suffix}'
+        trial_name = f'{args.model}_{random.randint(0, 10000):04f}_{datetime.date.today()}'
         wandb.init(
             # set the wandb project where this run will be logged
-            project=args.model.split("_")[0] + "_" + args.model.split("_")[1] + "_" + args.wandb_suffix,
-            name=name,
+            project=project_name,
+            name=trial_name,
             # track hyperparameters and run metadata
             config={
-            "model": args.model,
-            "ffn_norm": args.feature_norm,
-            "lr": args.lr,
-            "min-lr": args.min_lr,
-            "warmup-lr": args.warmup_lr,
-            "warmup-epoch": args.warmup_epochs,
-            "opt": args.opt,
-            "weight-decay": args.weight_decay,
-            "epochs": args.epochs,
-            "batch_size": args.batch_size*args.accumulation_steps*args.world_size,
-            "drop_path": args.drop_path,
-            "idle_ratio": args.idle_ratio,
+                "model": args.model,
+                "batch_size": args.batch_size*args.accumulation_steps*args.world_size,
+                "epochs": args.epochs,
+                "opt": args.opt,
+                "lr": args.lr,
+                "min_lr": args.min_lr,
+                "warmup_lr": args.warmup_lr,
+                "warmup_epoch": args.warmup_epochs,
+                "weight_decay": args.weight_decay,
+                "drop_path": args.drop_path,
+                "channel_idle": args.channel_idle,
+                "heuristic": args.heuristic if args.channel_idle else None,
+                "ffn_norm": args.feature_norm if args.channel_idle else "LayerNorm",
+                "idle_ratio": args.idle_ratio if args.channel_idle else 0.0,
             }, 
             mode=os.environ['WANDB_MODE']
         )
@@ -697,7 +696,6 @@ def main(args):
         if args.output_dir and utils.is_main_process():
             with (output_dir / "log.txt").open("a") as f:
                 f.write(json.dumps(log_stats) + "\n")
-        
     
     if args.global_rank == 0 and args.use_wandb:
         wandb.finish()

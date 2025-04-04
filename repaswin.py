@@ -48,7 +48,7 @@ class Mlp(nn.Module):
         ######################## ↓↓↓↓↓↓ ########################
         # Channel-idle
         self.channel_idle = channel_idle
-        self.act_channels = int(dim_hidden * (1-idle_ratio))
+        self.act_channels = math.ceil(dim_hidden * (1-idle_ratio))
         ######################## ↑↑↑↑↑↑ ########################
         
         ######################## ↓↓↓↓↓↓ ########################

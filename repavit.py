@@ -310,7 +310,8 @@ class Transformer(VisionTransformer):
             feature_norm='LayerNorm',
             channel_idle=False,
             idle_ratio=0.75,
-            heuristic="static"):
+            heuristic="static",
+            **kwargs):
         
         super().__init__(
             img_size=img_size,

@@ -246,7 +246,7 @@ def init_distributed_mode(args):
         print('Initializing distributed mode')
 
     args.device = f'cuda:{args.local_rank}'
-    torch.cuda.device(args.device)
+    torch.cuda.set_device(args.device)
     args.dist_backend = 'nccl'
     print('| distributed init (rank {}): {}'.format(
         args.global_rank, args.dist_url), flush=True)
