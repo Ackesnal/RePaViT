@@ -225,7 +225,7 @@ def world_info_from_env():
             global_rank = int(os.environ[v])
             break
     world_size = 1
-    for v in ('SLURM_NTASKS', 'WORLD_SIZE', 'PMI_SIZE', 'OMPI_COMM_WORLD_SIZE'):
+    for v in ('WORLD_SIZE', 'SLURM_NTASKS', 'PMI_SIZE', 'OMPI_COMM_WORLD_SIZE'):
         if v in os.environ:
             world_size = int(os.environ[v])
             break
