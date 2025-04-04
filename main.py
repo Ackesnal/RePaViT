@@ -33,7 +33,6 @@ import repavit
 import repaswin
 import repapoolformer
 import repamlpmixer
-import repaemo
 
 
 
@@ -596,7 +595,7 @@ def main(args):
     
     if args.global_rank == 0 and args.use_wandb:
         project_name = f'{args.model}_{args.wandb_suffix}'
-        trial_name = f'{args.model}_{random.randint(0, 10000):04f}_{datetime.date.today()}'
+        trial_name = f'{args.model}_{random.randint(0, 10000):04d}_{datetime.date.today()}'
         wandb.init(
             # set the wandb project where this run will be logged
             project=project_name,
