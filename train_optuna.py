@@ -518,7 +518,8 @@ def main_training(args):
         # Loss NAN
         if math.isnan(train_stats["loss"]):
             test_stats = evaluate(data_loader_val, model, args.device, args)
-            wandb.log({"accuracy": test_stats["acc1"], "loss": train_stats["loss"],})
+            if args.global_rank == 0:
+                wandb.log({"accuracy": test_stats["acc1"], "loss": train_stats["loss"],})
             break
         
         if args.output_dir:
