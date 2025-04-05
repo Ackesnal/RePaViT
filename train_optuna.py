@@ -2,12 +2,11 @@
 # All rights reserved.
 import os
 import time
-import yaml
+import math
 import json
 import utils
 import wandb
 import optuna
-import pickle
 import random
 import argparse
 import datetime
@@ -275,7 +274,6 @@ def main_training(args):
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
-        persistent_workers=True,
         prefetch_factor=args.prefetch_factor if args.num_workers>0 else None,
         drop_last=True,
     )
@@ -516,6 +514,12 @@ def main_training(args):
             lr_scheduler = lr_scheduler,
             use_amp = use_amp, args = args,
         )
+        
+        # Loss NAN
+        if math.isnan(train_stats["loss"]):
+            test_stats = evaluate(data_loader_val, model, args.device, args)
+            wandb.log({"accuracy": test_stats["acc1"], "loss": train_stats["loss"],})
+            break
         
         if args.output_dir:
             checkpoint_paths = [output_dir / 'checkpoint.pth']
