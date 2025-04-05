@@ -598,7 +598,7 @@ def objective(trial):
         args.lr = trial.suggest_float('lr', 1e-4, 1e-1) / args.accumulation_steps
         args.min_lr = trial.suggest_float('min_lr', 0., 1e-5) / args.accumulation_steps
         args.warmup_lr = args.warmup_lr / args.accumulation_steps
-        args.warmup_epochs = 20
+        args.warmup_epochs = 10
         args.weight_decay = trial.suggest_float('weight_decay', 0., 0.2)
         args.drop_path = trial.suggest_float('drop_path', 0., 0.5)
         
