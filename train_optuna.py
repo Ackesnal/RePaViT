@@ -595,13 +595,13 @@ def objective(trial):
     config = [None]
     if args.global_rank == 0:
         args.batch_size = 4096 // args.world_size // args.accumulation_steps
-        args.opt = trial.suggest_categorical("opt", ["lamb", "adamw", "lambw"])
-        args.lr = trial.suggest_float('lr', 1e-4, 1e-1) / args.accumulation_steps
+        args.opt = trial.suggest_categorical("opt", ["lamb"])
+        args.lr = trial.suggest_float('lr', 1e-4, 1e-2) / args.accumulation_steps
         args.min_lr = trial.suggest_float('min_lr', 0., 1e-5) / args.accumulation_steps
         args.warmup_lr = args.warmup_lr / args.accumulation_steps
         args.warmup_epochs = 10
         args.weight_decay = trial.suggest_float('weight_decay', 0., 0.2)
-        args.drop_path = trial.suggest_float('drop_path', 0., 0.5)
+        args.drop_path = trial.suggest_float('drop_path', 0., 0.4)
         
         config[0] = {
             "batch_size": args.batch_size,
@@ -628,6 +628,7 @@ def objective(trial):
     args.wandb_suffix = "Optuna" if args.wandb_suffix is None else args.wandb_suffix
     args.dist_eval = True
     args.unscale_lr = True
+    args.color_jitter = 0.4
     
     # Synchronize before start training
     torch.distributed.barrier()
