@@ -15,7 +15,7 @@ cd RePaViT
 Then, install environments via conda:
 ```
 conda create -n repavit python=3.10 -y && conda activate repavit
-pip install torch torchvision torchaudio timm==1.0.3 einops ptflops wandb
+pip install torch torchvision torchaudio timm==1.0.3 einops ptflops wandb rocksdb-py
 ```
 After finishing the above installations, it is ready to run this repo.
 
