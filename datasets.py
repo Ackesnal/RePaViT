@@ -3,7 +3,7 @@
 import os
 import json
 from PIL import Image
-import rocksdbpy
+import rocksdb
 import io
 
 from torchvision import datasets, transforms
@@ -58,38 +58,36 @@ class INatDataset(ImageFolder):
     # __getitem__ and __len__ inherited from ImageFolder
 
 
-class CustomizedImagenetDataset(Dataset):
-    def __init__(self, root, transform=None, db_path=None):
-        self.root = root
+class RocksdbImagenetDataset(Dataset):
+    def __init__(self, db_path=None, is_train=True, transform=None,):
         self.transform = transform
-        self.db = rocksdbpy.open_for_readonly(db_path)
-        
-        self.classes = sorted([d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d))])
-        # 构造类别到索引的映射，例如 {'n01440764': 0, 'n01443537': 1, ...}
+        db_path = os.path.join(db_path, "train.db" if is_train else "val.db") 
+        self.db = rocksdb.DB(db_path, rocksdb.Options(), read_only=True)
+
+        # Get the keys and class labels
+        it = self.db.iterkeys()
+        it.seek_to_first()
+        self.keys = [key for key in it]
+        self.classes= sorted(list(set([key.decode('utf-8').split("/")[0] for key in self.keys])))
         self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.classes)}
         
-        # 遍历每个类别，收集 (图像路径, 标签) 对
-        self.samples = []
-        for cls in self.classes:
-            cls_dir = os.path.join(root, cls)
-            for fname in os.listdir(cls_dir):
-                # 这里过滤 jpg、jpeg、png 格式的图像（可根据需要扩展）
-                if fname.lower().endswith(('.jpg', '.jpeg', '.png')):
-                    path = os.path.join(cls, fname)
-                    label = self.class_to_idx[cls]
-                    self.samples.append((path, label))
-    
+
     def __len__(self):
-        return len(self.samples)
+        return len(self.keys)
     
     def __getitem__(self, index):
-        path, label = self.samples[index]
-        # 从rocksdb读取
-        image = self.db.get(path.encode('utf-8'))
-        # 使用 PIL 打开图像并转换为 RGB 模式
+        # Get the key to the image in rocksdb
+        key = self.keys[index]
+        
+        # Get image from rocksdb and apply transformation if defined
+        image = self.db.get(key)
         image = Image.open(io.BytesIO(image)).convert('RGB')
         if self.transform:
             image = self.transform(image)
+        
+        # Get the image's class label
+        label = self.class_to_idx[key.decode('utf-8').split("/")[0]]
+        
         return image, label
     
 
@@ -100,9 +98,9 @@ def build_dataset(is_train, args):
         dataset = datasets.CIFAR100(args.data_path, train=is_train, transform=transform)
         nb_classes = 100
     elif args.data_set == 'IMNET':
-        if is_train and args.rocksdb is not None:
+        if args.rocksdb is not None:
             root = os.path.join(args.data_path, 'train')
-            dataset = CustomizedImagenetDataset(root, transform=transform, db_path=args.rocksdb)
+            dataset = RocksdbImagenetDataset(db_path=args.rocksdb, train=is_train, transform=transform)
         else:
             root = os.path.join(args.data_path, 'train' if is_train else 'val')
             dataset = datasets.ImageFolder(root, transform=transform)

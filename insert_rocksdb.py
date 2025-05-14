@@ -1,27 +1,86 @@
 import os
-import rocksdbpy
+import rocksdb
+import tarfile
+from tqdm import tqdm
+from io import BytesIO
+from urllib.request import urlopen
 
-# 定义 ImageNet 训练集根目录（根据实际情况修改）
-imagenet_root = '/mnt/data/imagenet/train'
+# Define the paths
+tar_path_root = '/mnt/data/imagenet'
+db_path_root = '/home/s4695741/imagenet'
 
-# 配置 RocksDB 选项并创建数据库
-db_path = '/home/s4695741/imagenet_train.db'
-db = rocksdbpy.open_default(db_path)
+if not os.path.exists(os.path.join(tar_path_root, "ILSVRC2012_img_train.tar")):
+    print(f"{os.path.join(tar_path_root, 'ILSVRC2012_img_train.tar')} does not exist. Exit.")
+if not os.path.exists(os.path.join(tar_path_root, "ILSVRC2012_img_val.tar")):
+    print(f"{os.path.join(tar_path_root, 'ILSVRC2012_img_val.tar')} does not exist. Exit.")
+if not os.path.exists(db_path_root):
+    print(f"{db_path_root} does not exist. Exit.")
 
-# 遍历目录，将每张图像存入 RocksDB
-# 这里 key 使用文件的相对路径，value 为图像二进制数据
-for root, dirs, files in os.walk(imagenet_root):
-    for file in files:
-        if file.lower().endswith(('.jpg', '.jpeg', '.png')):
-            file_path = os.path.join(root, file)
-            with open(file_path, 'rb') as f:
-                img_data = f.read()
-            # 使用相对路径作为 key（也可根据需要自定义 key）
-            key = os.path.relpath(file_path, imagenet_root)
+# Train set
+# Open RocksDB
+db_path = os.path.join(db_path_root, "train.db")
+opts = rocksdb.Options()
+opts.create_if_missing = True
+db = rocksdb.DB(db_path, opts)
+
+# Open ILSVRC2012_img_train.tar
+tar_path = os.path.join(tar_path_root, "ILSVRC2012_img_train.tar")
+with tarfile.open(tar_path, 'r') as outer_tar:
+    for inner_tar in tqdm(outer_tar, total=1000, desc="Train set decompressing and saving:"):
+        if inner_tar.isfile() and inner_tar.name.endswith('.tar'):
+            # Batch i/o, faster
+            batch = rocksdb.WriteBatch()
             
-            # 注意 RocksDB 的 key 和 value 需要为 bytes 类型
-            db.set(key.encode('utf-8'), img_data)
-            print(f"Stored: {key}")
+            inner_tar_name = inner_tar.name
+            inner_tar_bytes = outer_tar.extractfile(inner_tar).read()
+            inner_tar = tarfile.open(fileobj=BytesIO(inner_tar_bytes), mode='r')
 
-db.close()
-print("ImageNet 数据存储完成！")
+            # class name (e.g., n01440764)
+            class_name = os.path.splitext(inner_tar_name)[0]
+
+            for image_member in inner_tar:
+                if image_member.isfile() and image_member.name.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    img_data = inner_tar.extractfile(image_member).read()
+                    # use "class_name/image_name" as the key in rocksdb
+                    key = f"{class_name}/{image_member.name}".encode('utf-8') # key needs to be binary
+                    batch.put(key, img_data)
+                    print(f"Stored: {class_name}/{image_member.name}")
+            
+            # Batch i/o, faster
+            db.write(batch)
+            
+            inner_tar.close()
+
+# Test set
+# Open RocksDB
+db_path = os.path.join(db_path_root, "val.db")
+opts = rocksdb.Options()
+opts.create_if_missing = True
+db = rocksdb.DB(db_path, opts)
+
+label_url = "https://raw.githubusercontent.com/tensorflow/models/master/research/slim/datasets/imagenet_2012_validation_synset_labels.txt"
+print("Downloading synset labels...")
+with urlopen(label_url) as f:
+    synset_labels = [line.decode("utf-8").strip() for line in f]
+print("Done")
+
+# Open ILSVRC2012_img_val.tar
+tar_path = os.path.join(tar_path_root, "ILSVRC2012_img_val.tar")
+# Batch i/o, faster
+batch = rocksdb.WriteBatch()
+with tarfile.open(tar_path, 'r') as tar:
+    members = [m for m in tar.getmembers() if m.isfile()]
+    members.sort(key=lambda m: m.name)  # 确保顺序与 synset_labels 对齐
+
+    assert len(members) == 50000, "Expected 50,000 images in tar"
+    for i, member in enumerate(tqdm(members, desc="Val set decompressing and saving:")):
+        img_data = tar.extractfile(member).read()
+        class_name = synset_labels[i]
+        image_name = os.path.basename(member.name)
+        key = f"{class_name}/{image_name}".encode("utf-8")
+        batch.put(key, img_data)
+        print(f"Stored: {class_name}/{image_name}")  
+# Batch i/o, faster
+db.write(batch)
+
+print(f"ImageNet saved to RocksDB at {db_path_root}!")
