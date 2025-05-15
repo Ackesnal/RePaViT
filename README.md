@@ -15,7 +15,8 @@ cd RePaViT
 Then, install environments via conda:
 ```
 conda create -n repavit python=3.10 -y && conda activate repavit
-pip install torch torchvision torchaudio timm==1.0.3 einops ptflops wandb rocksdb-py
+conda install conda-forge::python-rocksdb -y
+pip install torch torchvision torchaudio timm==1.0.3 einops ptflops wandb
 ```
 After finishing the above installations, it is ready to run this repo.
 
@@ -37,6 +38,12 @@ The directory structure is the standard layout for the torchvision `datasets.Ima
     class2/
       img4.jpeg
 ```
+
+We provide support for [RocksDB](https://python-rocksdb.readthedocs.io/en/latest/) as an alternative dataset organization solution. In certain HPC environments where the number of allowable files is limited, the ImageNet dataset cannot be fully decompressed on high-speed I/O disks. In this case, RocksDB enables efficient and stable ImageNet data storing and loading, without the need for millions of small image files.
+
+To convert ImageNet into a RocksDB database, simply run `python insert_rocksdb.py` (please replace `tar_path_root` and `db_path_root` with your source and target root paths).
+
+When training the model, use the `--rocksdb` argument instead of `--data_path` to specify the database location.
 
 ## Training
 ### 1. Training on a single node
@@ -90,6 +97,11 @@ torchrun --nproc_per_node=8 main.py \
 `--channel_idle` and `--idle_ratio=0.75` are used to control channel idle mechanism in FFN layers. Please note that `--feature_norm=BatchNorm` must be added to facilitate full structural reparameterization.
 
 If the computating resource is limited, you can add `--accumulation_steps` for training with a smaller batch size and gradient accumulation. `--accumulation_steps`$\times$`--batch_size`$\times$`--nproc_per_node` is the total batch size per batch.
+
+For your convenience, we also provide one-line command below:
+```
+torchrun --nproc_per_node=8 main.py --model=RePaViT_Large --batch_size=512 --epochs=300 --dist_eval --channel_idle --idle_ratio=0.75 --feature_norm=BatchNorm --data_path=/path/to/imagenet --output_dir=/path/to/output --lr=1e-3 --min_lr=5e-5 --warmup_lr=1e-6 --warmup_epochs=20 --unscale_lr --weight_decay=0.05 --opt=lamb --drop_path=0.3
+```
 
 ### 2. Track your training with wandb
 

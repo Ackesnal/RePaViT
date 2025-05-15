@@ -99,8 +99,7 @@ def build_dataset(is_train, args):
         nb_classes = 100
     elif args.data_set == 'IMNET':
         if args.rocksdb is not None:
-            root = os.path.join(args.data_path, 'train')
-            dataset = RocksdbImagenetDataset(db_path=args.rocksdb, train=is_train, transform=transform)
+            dataset = RocksdbImagenetDataset(db_path=args.rocksdb, is_train=is_train, transform=transform)
         else:
             root = os.path.join(args.data_path, 'train' if is_train else 'val')
             dataset = datasets.ImageFolder(root, transform=transform)

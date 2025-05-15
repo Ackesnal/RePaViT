@@ -6,8 +6,8 @@ from io import BytesIO
 from urllib.request import urlopen
 
 # Define the paths
-tar_path_root = '/mnt/data/imagenet'
-db_path_root = '/home/s4695741/imagenet'
+tar_path_root = '/root/path/to/imagenet/tarfiles'
+db_path_root = '/root/path/to/imagenet/rocksdb'
 
 if not os.path.exists(os.path.join(tar_path_root, "ILSVRC2012_img_train.tar")):
     print(f"{os.path.join(tar_path_root, 'ILSVRC2012_img_train.tar')} does not exist. Exit.")
@@ -70,7 +70,7 @@ tar_path = os.path.join(tar_path_root, "ILSVRC2012_img_val.tar")
 batch = rocksdb.WriteBatch()
 with tarfile.open(tar_path, 'r') as tar:
     members = [m for m in tar.getmembers() if m.isfile()]
-    members.sort(key=lambda m: m.name)  # 确保顺序与 synset_labels 对齐
+    members.sort(key=lambda m: m.name)  # ensure image aligns with synset_labels
 
     assert len(members) == 50000, "Expected 50,000 images in tar"
     for i, member in enumerate(tqdm(members, desc="Val set decompressing and saving:")):
