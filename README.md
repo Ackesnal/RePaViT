@@ -41,7 +41,11 @@ The directory structure is the standard layout for the torchvision `datasets.Ima
 
 We provide support for [RocksDB](https://python-rocksdb.readthedocs.io/en/latest/) as an alternative dataset organization solution. In certain HPC environments where the number of allowable files is limited, the ImageNet dataset cannot be fully decompressed on high-speed I/O disks. In this case, RocksDB enables efficient and stable ImageNet data storing and loading, without the need for millions of small image files.
 
-To convert ImageNet into a RocksDB database, simply run `python insert_rocksdb.py` (please replace `tar_path_root` and `db_path_root` with your source and target root paths).
+To convert ImageNet into a RocksDB database, simply run 
+```
+python insert_rocksdb.py
+```
+(please replace `tar_path_root` and `db_path_root` in [insert_rocksdb.py](https://github.com/Ackesnal/RePaViT/insert_rocksdb.py) with your own source and target root paths).
 
 When training the model, use the `--rocksdb` argument instead of `--data_path` to specify the database location.
 
