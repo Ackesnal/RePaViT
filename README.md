@@ -3,7 +3,7 @@
 
 ### This is the official repository for __RePaViT__.
 
-![Main method](img/Method_Compare.jpg)
+<img src="img/Method_Compare.jpg" alt="Main Method" width="70%"/>
 
 _(For RePa-LV-ViT source code, please refer to this [repo](https://github.com/Ackesnal/RePa-LV-ViT) as LV-ViT incorporates a different training framework. For dense prediction tasks, the code based on MMDetection and MMSegmentation is under construction. The pretrained model weights will be released soon.)_
 
