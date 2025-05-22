@@ -111,7 +111,7 @@ torchrun --nproc_per_node=8 main.py \
 
 `--channel_idle` and `--idle_ratio=0.75` are used to control channel idle mechanism in FFN layers. Please note that `--feature_norm=BatchNorm` must be added to facilitate full structural reparameterization.
 
-If the computating resource is limited, you can add `--accumulation_steps` for training with a smaller batch size and gradient accumulation. `--accumulation_steps`$\times$`--batch_size`$\times$`--nproc_per_node` is the total batch size per batch.
+If the computating resource is limited, you can add `--accumulation_steps` for training with a smaller batch size and gradient accumulation. (`--accumulation_steps` $\times$ `--batch_size` $\times$ `--nproc_per_node`) is the total batch size per batch.
 
 For your convenience, we also provide one-line command below:
 ```
