@@ -215,20 +215,18 @@ def save_on_master(*args, **kwargs):
 
 def world_info_from_env():
     local_rank = 0
-    for v in ('LOCAL_RANK', 'SLURM_LOCALID', 'MPI_LOCALRANKID', 'OMPI_COMM_WORLD_LOCAL_RANK'):
-        if v in os.environ:
-            local_rank = int(os.environ[v])
-            break
-    global_rank = 0
-    for v in ('RANK', 'SLURM_PROCID', 'PMI_RANK', 'OMPI_COMM_WORLD_RANK'):
-        if v in os.environ:
-            global_rank = int(os.environ[v])
-            break
-    world_size = 1
-    for v in ('WORLD_SIZE', 'SLURM_NTASKS', 'PMI_SIZE', 'OMPI_COMM_WORLD_SIZE'):
-        if v in os.environ:
-            world_size = int(os.environ[v])
-            break
+    
+    # First judge if it is SLURM environment
+    if "SLURM_PROCID" in os.environ:
+        # In SLURM
+        global_rank = int(os.environ["SLURM_PROCID"])
+        local_rank = int(os.environ["SLURM_LOCALID"])
+        world_size = int(os.environ["SLURM_NTASKS"])
+    else:
+        # Not in SLURM
+        global_rank = int(os.environ["RANK"])
+        local_rank = int(os.environ["LOCAL_RANK"])
+        world_size = int(os.environ["WORLD_SIZE"])
 
     return local_rank, global_rank, world_size
 
@@ -246,21 +244,20 @@ def init_distributed_mode(args):
         print('Initializing distributed mode')
 
     args.device = f'cuda:{args.local_rank}'
-    torch.cuda.set_device(args.device)
     args.dist_backend = 'nccl'
     print('| distributed init (rank {}): {}'.format(
         args.global_rank, args.dist_url), flush=True)
     
     torch.distributed.init_process_group(
-        backend=args.dist_backend, 
-        init_method=args.dist_url,
-        world_size=args.world_size, 
-        rank=args.global_rank,
+        backend = args.dist_backend, 
+        init_method = args.dist_url,
+        world_size = args.world_size, 
+        rank = args.global_rank,
     )
+    torch.cuda.set_device(args.local_rank)
     
     torch.distributed.barrier()
     setup_for_distributed(args.global_rank == 0)
-
 
 
 def unitwise_norm(x, norm_type=2.0):

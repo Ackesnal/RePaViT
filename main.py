@@ -402,17 +402,17 @@ def main(args):
             model.to(args.device)
             print("...")
             print("Reparameterization done!")
-        else:
-            get_macs(model)
-            x = torch.rand(128, 3, 224, 224).to(args.device)
-            # test model throughput for three times to ensure accuracy
-            print('Start inference speed testing...')
-            inference_speed = speed_test(model, x=x)
-            print('inference_speed (inaccurate):', inference_speed, 'images/s')
-            inference_speed = speed_test(model, x=x)
-            print('inference_speed:', inference_speed, 'images/s')
-            inference_speed = speed_test(model, x=x)
-            print('inference_speed:', inference_speed, 'images/s')
+            
+        get_macs(model)
+        x = torch.rand(128, 3, 224, 224).to(args.device)
+        # test model throughput for three times to ensure accuracy
+        print('Start inference speed testing...')
+        inference_speed = speed_test(model, x=x)
+        print('inference_speed (inaccurate):', inference_speed, 'images/s')
+        inference_speed = speed_test(model, x=x)
+        print('inference_speed:', inference_speed, 'images/s')
+        inference_speed = speed_test(model, x=x)
+        print('inference_speed:', inference_speed, 'images/s')
     if args.only_test_speed:
         if args.distributed:
             torch.distributed.destroy_process_group()
@@ -529,7 +529,6 @@ def main(args):
             else:
                 model = model_without_ddp
             print("Reparameterization done!")
-        
         
         get_macs(model)
         test_stats = evaluate(data_loader_val, model, args.device, args)
