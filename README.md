@@ -24,7 +24,7 @@ conda install conda-forge::python-rocksdb -y
 pip install torch torchvision torchaudio timm==1.0.3 einops ptflops wandb
 ```
 
-Alternatively, you can directly install from the pre-defined environment YAML file as:
+__[Recommended]__ Alternatively, you can directly install from the pre-defined environment YAML file as:
 ```
 conda env create -f environment.yml
 ```
@@ -222,8 +222,12 @@ torchrun --nproc_per_node=4 main.py \
   --idle_ratio=0.75 \
   --feature_norm=BatchNorm \
   --data_path=/path/to/imagenet \
-  --output_dir=/path/to/output \
   --resume=/path/to/pretrained_weight.pth
+```
+
+For your convenience, we also provide one-line command below:
+```
+torchrun --nproc_per_node=4 main.py --model=RePaViT_Large --batch_size=512 --eval --dist_eval --channel_idle --idle_ratio=0.75 --feature_norm=BatchNorm --data_path=/path/to/imagenet --resume=/path/to/pretrained_weight.pth
 ```
 
 ### 3.2. Inference speed test
@@ -234,14 +238,16 @@ __[RePaViT-Large] speed test:__
 ```
 torchrun --nproc_per_node=1 main.py \
   --model=RePaViT_Large \
-  --batch_size=512 \
-  --eval \
-  --dist_eval \
   --channel_idle \
   --idle_ratio=0.75 \
   --feature_norm=BatchNorm \
   --test_speed \
   --only_test_speed
+```
+
+For your convenience, we also provide one-line command below:
+```
+torchrun --nproc_per_node=1 main.py --model=RePaViT_Large --channel_idle --idle_ratio=0.75 --feature_norm=BatchNorm --test_speed --only_test_speed
 ```
 
 ### 3.3. Evaluation with Structural Reparameterization
@@ -252,15 +258,17 @@ __[RePaViT-Large] speed test after structural reparameterization:__
 ```
 torchrun --nproc_per_node=1 main.py \
   --model=RePaViT_Large \
-  --batch_size=512 \
-  --eval \
-  --dist_eval \
   --channel_idle \
   --idle_ratio=0.75 \
   --feature_norm=BatchNorm \
   --test_speed \
   --only_test_speed \
   --reparam
+```
+
+For your convenience, we also provide one-line command below:
+```
+torchrun --nproc_per_node=1 main.py --model=RePaViT_Large --channel_idle --idle_ratio=0.75 --feature_norm=BatchNorm --test_speed --only_test_speed --reparam
 ```
 
 `--reparam` can be combined with performance evalutation as well. The prediction accuracy before and after reparameterization should be the same.

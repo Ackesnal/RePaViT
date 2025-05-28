@@ -39,6 +39,7 @@ import repamlpmixer
 def get_args_parser():
     parser = argparse.ArgumentParser('DeiT training and evaluation script', add_help=False)
     parser.add_argument('--batch_size', default=64, type=int)
+    parser.add_argument('--nb_classes', default=1000, type=int)
     parser.add_argument('--epochs', default=300, type=int)
     parser.add_argument('--bce_loss', action='store_true')
     parser.add_argument('--unscale_lr', action='store_true')
@@ -265,50 +266,51 @@ def main(args):
 
     cudnn.benchmark = True
 
-    dataset_train, args.nb_classes = build_dataset(is_train=True, args=args)
-    dataset_val, _ = build_dataset(is_train=False, args=args)
+    if not args.test_speed and not args.only_test_speed:
+        dataset_train, args.nb_classes = build_dataset(is_train=True, args=args)
+        dataset_val, _ = build_dataset(is_train=False, args=args)
 
-    if args.distributed:
-        if args.repeated_aug:
-            sampler_train = RASampler(
-                dataset_train, num_replicas=args.world_size, rank=args.global_rank, shuffle=True
-            )
+        if args.distributed:
+            if args.repeated_aug:
+                sampler_train = RASampler(
+                    dataset_train, num_replicas=args.world_size, rank=args.global_rank, shuffle=True
+                )
+            else:
+                sampler_train = torch.utils.data.DistributedSampler(
+                    dataset_train, num_replicas=args.world_size, rank=args.global_rank, shuffle=True
+                )
+            if args.dist_eval:
+                if len(dataset_val) % args.world_size != 0:
+                    print('Warning: Enabling distributed evaluation with an eval dataset not divisible by process number. '
+                        'This will slightly alter validation results as extra duplicate entries are added to achieve '
+                        'equal num of samples per-process.')
+                sampler_val = torch.utils.data.DistributedSampler(
+                    dataset_val, num_replicas=args.world_size, rank=args.global_rank, shuffle=False)
+            else:
+                sampler_val = torch.utils.data.SequentialSampler(dataset_val)
         else:
-            sampler_train = torch.utils.data.DistributedSampler(
-                dataset_train, num_replicas=args.world_size, rank=args.global_rank, shuffle=True
-            )
-        if args.dist_eval:
-            if len(dataset_val) % args.world_size != 0:
-                print('Warning: Enabling distributed evaluation with an eval dataset not divisible by process number. '
-                      'This will slightly alter validation results as extra duplicate entries are added to achieve '
-                      'equal num of samples per-process.')
-            sampler_val = torch.utils.data.DistributedSampler(
-                dataset_val, num_replicas=args.world_size, rank=args.global_rank, shuffle=False)
-        else:
+            sampler_train = torch.utils.data.RandomSampler(dataset_train)
             sampler_val = torch.utils.data.SequentialSampler(dataset_val)
-    else:
-        sampler_train = torch.utils.data.RandomSampler(dataset_train)
-        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
-        
-    data_loader_train = torch.utils.data.DataLoader(
-        dataset_train, sampler=sampler_train,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        pin_memory=args.pin_mem,
-        persistent_workers=True,
-        prefetch_factor=args.prefetch_factor if args.num_workers>0 else None,
-        drop_last=True,
-    )
-    if args.ThreeAugment:
-        data_loader_train.dataset.transform = new_data_aug_generator(args)
+            
+        data_loader_train = torch.utils.data.DataLoader(
+            dataset_train, sampler=sampler_train,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            persistent_workers=True,
+            prefetch_factor=args.prefetch_factor if args.num_workers>0 else None,
+            drop_last=True,
+        )
+        if args.ThreeAugment:
+            data_loader_train.dataset.transform = new_data_aug_generator(args)
 
-    data_loader_val = torch.utils.data.DataLoader(
-        dataset_val, sampler=sampler_val,
-        batch_size=int(1.5 * args.batch_size),
-        num_workers=args.num_workers,
-        pin_memory=args.pin_mem,
-        drop_last=False,
-    )
+        data_loader_val = torch.utils.data.DataLoader(
+            dataset_val, sampler=sampler_val,
+            batch_size=int(1.5 * args.batch_size),
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=False,
+        )
 
     mixup_fn = None
     mixup_active = args.mixup > 0 or args.cutmix > 0. or args.cutmix_minmax is not None
