@@ -287,6 +287,10 @@ In this repo, we currently support the following backbone model(name)s:
 * RePaSwin-Small
 * RePaSwin-Base
 
+<p align="center">
+<img src="img/Performance.jpg" alt="Performance" width="100%"/>
+</p>
+
 We have also provided the implementation on MLPMixer and PoolFormer but have not tested them. The support for more backbones will be included in our future work.
 
 ## 5. License
