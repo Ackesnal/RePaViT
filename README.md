@@ -1,6 +1,7 @@
 
-# RePaViT: Scalable Vision Transformer Acceleration via Structural Reparameterization on Feedforward Network Layers [ICML2025] [Arxiv](arxiv)
-This is the official repository for __RePaViT__.
+# RePaViT: Scalable Vision Transformer Acceleration via Structural Reparameterization on Feedforward Network Layers [ICML2025]
+
+This is the official repository for __RePaViT__ [![arXiv](https://img.shields.io/badge/RePaViT-2505.21847-b31b1b.svg?logo=arXiv)](https://arxiv.org/abs/2505.21847)
 
 <p align="center">
 <img src="img/Method_Compare.jpg" alt="Main Method" width="60%"/>
