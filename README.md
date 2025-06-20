@@ -7,7 +7,7 @@ This is the official repository for __RePaViT__
 <img src="img/Method_Compare.jpg" alt="Main Method" width="60%"/>
 </p>
 
-_(For RePa-LV-ViT source code, please refer to this [repo](https://github.com/Ackesnal/RePa-LV-ViT) as LV-ViT incorporates a different training framework. For dense prediction tasks, the code based on MMDetection and MMSegmentation is under construction. The pretrained model weights will be released soon.)_
+_(For RePa-LV-ViT source code, please refer to this [repo](https://github.com/Ackesnal/RePa-LV-ViT) as LV-ViT incorporates a different training framework. For dense prediction tasks, the code based on MMDetection and MMSegmentation is under construction. Pretrained model weights have been released [here](https://huggingface.co/Ackesnal/RePaViT).)_
 
 
 ## 0. Environment Setup
@@ -242,13 +242,12 @@ torchrun --nproc_per_node=1 main.py \
   --channel_idle \
   --idle_ratio=0.75 \
   --feature_norm=BatchNorm \
-  --test_speed \
-  --only_test_speed
+  --test_speed
 ```
 
 For your convenience, we also provide one-line command below:
 ```
-torchrun --nproc_per_node=1 main.py --model=RePaViT_Large --channel_idle --idle_ratio=0.75 --feature_norm=BatchNorm --test_speed --only_test_speed
+torchrun --nproc_per_node=1 main.py --model=RePaViT_Large --channel_idle --idle_ratio=0.75 --feature_norm=BatchNorm --test_speed
 ```
 
 ### 3.3. Evaluation with Structural Reparameterization
@@ -263,13 +262,12 @@ torchrun --nproc_per_node=1 main.py \
   --idle_ratio=0.75 \
   --feature_norm=BatchNorm \
   --test_speed \
-  --only_test_speed \
   --reparam
 ```
 
 For your convenience, we also provide one-line command below:
 ```
-torchrun --nproc_per_node=1 main.py --model=RePaViT_Large --channel_idle --idle_ratio=0.75 --feature_norm=BatchNorm --test_speed --only_test_speed --reparam
+torchrun --nproc_per_node=1 main.py --model=RePaViT_Large --channel_idle --idle_ratio=0.75 --feature_norm=BatchNorm --test_speed --reparam
 ```
 
 `--reparam` can be combined with performance evalutation as well. The prediction accuracy before and after reparameterization should be the same.
@@ -279,9 +277,9 @@ torchrun --nproc_per_node=1 main.py --model=RePaViT_Large --channel_idle --idle_
 
 In this repo, we currently support the following backbone model(name)s:
 
-* RePaViT-Tiny
-* RePaViT-Small
-* RePaViT-Base
+* RePaViT-Tiny _(i.e., RePaDeiT-Tiny)_
+* RePaViT-Small _(i.e., RePaDeiT-Small)_
+* RePaViT-Base _(i.e., RePaDeiT-Base)_
 * RePaViT-Large
 * RePaViT-Huge
 * RePaSwin-Tiny
@@ -294,10 +292,13 @@ In this repo, we currently support the following backbone model(name)s:
 
 We have also provided the implementation on MLPMixer and PoolFormer but have not tested them. The support for more backbones will be included in our future work.
 
-## 5. License
+## 5. Pretrained Weights
+All current pretrained weights are available on __[Hugging Face](https://huggingface.co/Ackesnal/RePaViT/tree/main)__.
+
+## 6. License
 This repository is released under the Apache 2.0 license as found in the [LICENSE](LICENSE) file.
 
-## 6. Reference
+## 7. Reference
 If you use this repo or find it useful, please consider citing:
 ```
 @inproceedings{xu2025repavit,

@@ -13,18 +13,16 @@ from pathlib import Path
 
 import torch
 import torch.backends.cudnn as cudnn
-import torch.autograd.profiler as profiler
 
 from timm.data import Mixup
 from timm.models import create_model
 from timm.optim import create_optimizer
-from timm.utils import NativeScaler, get_state_dict, ModelEma
+from timm.utils import get_state_dict, ModelEma
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
-from timm.scheduler import create_scheduler, create_scheduler_v2, scheduler_kwargs
+from timm.scheduler import create_scheduler_v2, scheduler_kwargs
 
 from samplers import RASampler
 from datasets import build_dataset
-from losses import DistillationLoss
 from augment import new_data_aug_generator
 from engine import train_one_epoch, evaluate
 from ptflops import get_model_complexity_info
@@ -145,18 +143,6 @@ def get_args_parser():
                         help='Probability of switching to cutmix when both mixup and cutmix enabled')
     parser.add_argument('--mixup_mode', type=str, default='batch',
                         help='How to apply mixup/cutmix params. Per "batch", "pair", or "elem"')
-
-    # Distillation parameters
-    parser.add_argument('--teacher_model', default='regnety_160', type=str, metavar='MODEL',
-                        help='Name of teacher model to train (default: "regnety_160"')
-    parser.add_argument('--teacher_path', type=str, default='')
-    parser.add_argument('--distillation_type', default='none', choices=['none', 'soft', 'hard'], type=str, help="")
-    parser.add_argument('--distillation_alpha', default=0.5, type=float, help="")
-    parser.add_argument('--distillation_tau', default=1.0, type=float, help="")
-
-    # * Finetuning params
-    parser.add_argument('--finetune', default='', help='finetune from checkpoint')
-    parser.add_argument('--attn_only', action='store_true') 
     
     # Dataset parameters
     parser.add_argument('--data_path', default='/path/to/imagenet', type=str,
@@ -205,7 +191,6 @@ def get_args_parser():
     
     # Speed tests and time profiling
     parser.add_argument('--test_speed', action='store_true')
-    parser.add_argument('--only_test_speed', action='store_true')
     
     # RePaViT arguments
     parser.add_argument('--feature_norm', default='LayerNorm', type=str)
@@ -248,25 +233,37 @@ def speed_test(model, ntest=100, batchsize=128, x=None):
 
 
 def main(args):
-    # Distribution init
+    
+    ################################################################################################
+    #----- ↓↓↓↓↓ 0. Initialize environment ↓↓↓↓↓ ------#############################################
+    
+    # Automatically set distributed environment under SLURM and local machine
     utils.init_distributed_mode(args)
-    
-    print(args)
-    
+    if args.distributed:
+        cudnn.benchmark = True
+    # Set torch device
     torch.device(args.device)
-        
-    if args.distillation_type != 'none' and args.finetune and not args.eval:
-        raise NotImplementedError("Finetuning with distillation not yet supported")
-
-    # fix the seed for reproducibility
+    
+    # Set seed for reproducibility
     seed = args.seed + args.global_rank
     torch.manual_seed(seed)
     np.random.seed(seed)
-    # random.seed(seed)
+    random.seed(seed)
+    
+    # Present all arguments
+    print(args)
+    
+    # Set up output directory
+    output_dir = Path(args.output_dir)
+    
+    #----- ↑↑↑↑↑ 0. Initialize environment ↑↑↑↑↑ ------#############################################
+    ################################################################################################
+    
+    ################################################################################################
+    #----- ↓↓↓↓↓ 1. Load dataset and initialize DataLoader (when not testing speed) ↓↓↓↓↓ ------####
 
-    cudnn.benchmark = True
-
-    if not args.test_speed and not args.only_test_speed:
+    if not args.test_speed:
+        # Load dataset with either raw ImageNet files or RocksDB supported
         dataset_train, args.nb_classes = build_dataset(is_train=True, args=args)
         dataset_val, _ = build_dataset(is_train=False, args=args)
 
@@ -281,24 +278,26 @@ def main(args):
                 )
             if args.dist_eval:
                 if len(dataset_val) % args.world_size != 0:
-                    print('Warning: Enabling distributed evaluation with an eval dataset not divisible by process number. '
-                        'This will slightly alter validation results as extra duplicate entries are added to achieve '
-                        'equal num of samples per-process.')
+                    print('Warning: Enabling distributed evaluation with an eval dataset not divisible',
+                          'by process number. This will slightly alter validation results as extra',
+                          'duplicate entries are added to achieve equal num of samples per-process.')
                 sampler_val = torch.utils.data.DistributedSampler(
-                    dataset_val, num_replicas=args.world_size, rank=args.global_rank, shuffle=False)
+                    dataset_val, num_replicas=args.world_size, rank=args.global_rank, shuffle=False
+                    )
             else:
                 sampler_val = torch.utils.data.SequentialSampler(dataset_val)
         else:
             sampler_train = torch.utils.data.RandomSampler(dataset_train)
             sampler_val = torch.utils.data.SequentialSampler(dataset_val)
-            
+        
+        # Create DataLoader for training and validation datasets
         data_loader_train = torch.utils.data.DataLoader(
             dataset_train, sampler=sampler_train,
             batch_size=args.batch_size,
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
             persistent_workers=True,
-            prefetch_factor=args.prefetch_factor if args.num_workers>0 else None,
+            prefetch_factor=args.prefetch_factor if args.num_workers > 0 else None,
             drop_last=True,
         )
         if args.ThreeAugment:
@@ -306,12 +305,13 @@ def main(args):
 
         data_loader_val = torch.utils.data.DataLoader(
             dataset_val, sampler=sampler_val,
-            batch_size=int(1.5 * args.batch_size),
+            batch_size=int(args.batch_size * 1.5),
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
             drop_last=False,
         )
 
+    # Mixup dataset when training
     mixup_fn = None
     mixup_active = args.mixup > 0 or args.cutmix > 0. or args.cutmix_minmax is not None
     if mixup_active:
@@ -319,8 +319,13 @@ def main(args):
             mixup_alpha=args.mixup, cutmix_alpha=args.cutmix, cutmix_minmax=args.cutmix_minmax,
             prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
             label_smoothing=args.smoothing, num_classes=args.nb_classes)
+        
+    #----- ↑↑↑↑↑ 1. Load dataset and initialize DataLoader (when not testing speed) ↑↑↑↑↑ ------####
+    ################################################################################################
     
-    act_layer=torch.nn.GELU
+    ################################################################################################
+    #----- ↓↓↓↓↓ 2. Initialize backbone model w/o reparameterization (full size) ↓↓↓↓↓ ------#######
+    
     print(f"Creating model: {args.model}")
     model = create_model(
         args.model,
@@ -329,117 +334,121 @@ def main(args):
         drop_rate=args.drop,
         drop_path_rate=args.drop_path,
         drop_block_rate=None,
-        act_layer=act_layer,
         feature_norm=args.feature_norm,
         channel_idle=args.channel_idle,
         idle_ratio=args.idle_ratio,
         heuristic=args.heuristic
     )
     
-    if args.finetune:
-        if args.finetune.startswith('https'):
-            checkpoint = torch.hub.load_state_dict_from_url(
-                args.finetune, map_location='cpu', check_hash=True)
-        else:
-            checkpoint = torch.load(args.finetune, map_location='cpu')
-
-        checkpoint_model = checkpoint['model']
-        state_dict = model.state_dict()
-        for k in ['head.weight', 'head.bias', 'head_dist.weight', 'head_dist.bias']:
-            if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
-                print(f"Removing key {k} from pretrained checkpoint")
-                del checkpoint_model[k]
-        
-        # interpolate position embedding
-        pos_embed_checkpoint = checkpoint_model['pos_embed']
-        embedding_size = pos_embed_checkpoint.shape[-1]
-        num_patches = model.patch_embed.num_patches
-        num_extra_tokens = model.pos_embed.shape[-2] - num_patches
-        # height (== width) for the checkpoint position embedding
-        orig_size = int((pos_embed_checkpoint.shape[-2] - num_extra_tokens) ** 0.5)
-        # height (== width) for the new position embedding
-        new_size = int(num_patches ** 0.5)
-        # class_token and dist_token are kept unchanged
-        extra_tokens = pos_embed_checkpoint[:, :num_extra_tokens]
-        # only the position tokens are interpolated
-        pos_tokens = pos_embed_checkpoint[:, num_extra_tokens:]
-        pos_tokens = pos_tokens.reshape(-1, orig_size, orig_size, embedding_size).permute(0, 3, 1, 2)
-        pos_tokens = torch.nn.functional.interpolate(
-            pos_tokens, size=(new_size, new_size), mode='bicubic', align_corners=False)
-        pos_tokens = pos_tokens.permute(0, 2, 3, 1).flatten(1, 2)
-        new_pos_embed = torch.cat((extra_tokens, pos_tokens), dim=1)
-        checkpoint_model['pos_embed'] = new_pos_embed
-        
-        model.load_state_dict(checkpoint_model, strict=False)
-        
-    if args.attn_only:
-        for name_p,p in model.named_parameters():
-            if '.attn.' in name_p:
-                p.requires_grad = True
-            else:
-                p.requires_grad = False
-        try:
-            model.head.weight.requires_grad = True
-            model.head.bias.requires_grad = True
-        except:
-            model.fc.weight.requires_grad = True
-            model.fc.bias.requires_grad = True
-        try:
-            model.pos_embed.requires_grad = True
-        except:
-            print('no position encoding')
-        try:
-            for p in model.patch_embed.parameters():
-                p.requires_grad = False
-        except:
-            print('no patch embed')
-            
+    # Send model to device
     model.to(args.device)
     
-    if args.test_speed:
-        model.eval()
-        if args.reparam:
-            print("Reparameterizing the backbone ...")
-            model.reparam()
-            model.to(args.device)
-            print("...")
-            print("Reparameterization done!")
-            
-        get_macs(model)
-        x = torch.rand(128, 3, 224, 224).to(args.device)
-        # test model throughput for three times to ensure accuracy
-        print('Start inference speed testing...')
-        inference_speed = speed_test(model, x=x)
-        print('inference_speed (inaccurate):', inference_speed, 'images/s')
-        inference_speed = speed_test(model, x=x)
-        print('inference_speed:', inference_speed, 'images/s')
-        inference_speed = speed_test(model, x=x)
-        print('inference_speed:', inference_speed, 'images/s')
-    if args.only_test_speed:
-        if args.distributed:
-            torch.distributed.destroy_process_group()
-        return
-
-        
+    # # Get model parameters count and computational complexity
+    get_macs(model)
+    model.train()
+    
+    # Create EMA model if specified
     model_ema = None
-    if args.model_ema:
+    if not args.eval and not args.test_speed and args.model_ema:
         # Important to create EMA model after cuda(), DP wrapper, and AMP but before SyncBN and DDP wrapper
         model_ema = ModelEma(
             model,
             decay=args.model_ema_decay,
             device='cpu' if args.model_ema_force_cpu else '',
-            resume='')
+            resume=''
+        )
 
-
+    # If using DDP, wrap the model in DistributedDataParallel
     model_without_ddp = model
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.device])
         model_without_ddp = model.module
         
-    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print('number of params:', n_parameters)
+    #----- ↑↑↑↑↑ 2. Initialize backbone model w/o reparameterization (full size) ↑↑↑↑↑ ------#######
+    ################################################################################################
     
+    ################################################################################################
+    #----- ↓↓↓↓↓ 3. Test model inference speed only ↓↓↓↓↓ ------####################################
     
+    # If only testing speed, skip training and evaluation
+    if args.test_speed:
+        # Get the model without DDP wrapper
+        model = model_without_ddp
+        # Change to eval mode
+        model.eval()
+        
+        # If needing to reparameterize the model before speed test
+        if args.reparam:
+            print("Reparameterizing the backbone ...")
+            model.reparam()
+            model.to(args.device)
+            print("Reparameterization done!")
+        
+        # Ensure only test speed on one process
+        if args.global_rank == 0:
+            x = torch.rand(128, 3, 224, 224).to(args.device)
+            # test model throughput for three times to ensure accuracy
+            print('Start inference speed testing...')
+            inference_speed = speed_test(model, x=x)
+            print('inference_speed:', inference_speed, 'images/s')
+            inference_speed = speed_test(model, x=x)
+            print('inference_speed:', inference_speed, 'images/s')
+            inference_speed = speed_test(model, x=x)
+            print('inference_speed:', inference_speed, 'images/s')
+        
+        # If using distributed training, destroy the process group, then exit
+        if args.distributed:
+            torch.distributed.destroy_process_group()
+        return
+    
+    #----- ↑↑↑↑↑ 3. Test model inference speed only ↑↑↑↑↑ ------####################################
+    ################################################################################################
+
+    ################################################################################################
+    #----- ↓↓↓↓↓ 4. Evaluation only ↓↓↓↓↓ ------####################################################
+    
+    if args.eval:
+        # First check if model weight is provided via --resume
+        # If provided, load the model weight
+        if args.resume:
+            # First load weights from the specified path
+            if args.resume.startswith('https'):
+                checkpoint = torch.hub.load_state_dict_from_url(
+                    args.resume, map_location='cpu', check_hash=True)
+            else:
+                checkpoint = torch.load(args.resume, map_location='cpu', weights_only=False)
+            
+            # Second load the model state dict
+            if args.distributed:
+                model.module.load_state_dict(checkpoint['model'])
+            else:
+                model.load_state_dict(checkpoint['model'])
+        
+        # If needing to reparameterize the model before evaluation
+        if args.reparam:
+            print("Reparametering the backbone ...")
+            if args.distributed:
+                model.module.reparam()
+                model.module.to(args.device)
+            else:
+                model.reparam()
+                model.to(args.device)
+            print("Reparameterization done!")
+        
+        test_stats = evaluate(data_loader_val, model, args.device, args)
+        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+        
+        if args.distributed:
+            torch.distributed.destroy_process_group()
+        return
+    
+    #----- ↑↑↑↑↑ 4. Evaluation only ↑↑↑↑↑ ------####################################################
+    ################################################################################################
+    
+    ################################################################################################
+    #----- ↓↓↓↓↓ 5. Initialize lr scheduler, loss, loss scaler and optimizer ↓↓↓↓↓ ------###########
+    
+    # Set up all the learning rates based on the arguments
     if not args.unscale_lr:
         args.lr = args.lr * args.batch_size * utils.get_world_size() / 1024.0
         args.warmup_lr = args.warmup_lr * args.batch_size * utils.get_world_size() / 1024.0
@@ -447,24 +456,27 @@ def main(args):
     args.step_on_epochs = False
     args.sched_on_updates = True
     args.updates_per_epoch = len(data_loader_train)
-    # gradient accumulation also need to scale the learning rate
+    # Gradient accumulation also need to scale the learning rate
     if args.accumulation_steps > 1:
         args.lr = args.lr * args.accumulation_steps
         args.warmup_lr = args.warmup_lr * args.accumulation_steps
         args.min_lr = args.min_lr * args.accumulation_steps
         args.updates_per_epoch = len(data_loader_train)//args.accumulation_steps
-        
+    
+    # Create optimizer
     optimizer = create_optimizer(args, model_without_ddp)
+    
+    # Create loss scaler for mixed precision training
     loss_scaler = utils.NativeScalerWithGradNormCount()
-        
+    
+    # Create lr scheduler
     lr_scheduler, num_epochs = create_scheduler_v2(
         optimizer,
         **scheduler_kwargs(args),
         updates_per_epoch=args.updates_per_epoch,
     )
     
-    criterion = LabelSmoothingCrossEntropy()
-
+    # Create loss function / Criterion
     if mixup_active:
         # smoothing is handled with mixup label transform
         criterion = SoftTargetCrossEntropy()
@@ -475,40 +487,28 @@ def main(args):
         
     if args.bce_loss:
         criterion = torch.nn.BCEWithLogitsLoss()
-        
-    teacher_model = None
-    if args.distillation_type != 'none':
-        assert args.teacher_path, 'need to specify teacher-path when using distillation'
-        print(f"Creating teacher model: {args.teacher_model}")
-        teacher_model = create_model(
-            args.teacher_model,
-            pretrained=False,
-            num_classes=args.nb_classes,
-            global_pool='token',
-        )
-        if args.teacher_path.startswith('https'):
-            checkpoint = torch.hub.load_state_dict_from_url(
-                args.teacher_path, map_location='cpu', check_hash=True)
-        else:
-            checkpoint = torch.load(args.teacher_path, map_location='cpu')
-        teacher_model.load_state_dict(checkpoint['model'])
-        teacher_model.to(args.device)
-        teacher_model.eval()
-
-    # wrap the criterion in our custom DistillationLoss, which
-    # just dispatches to the original criterion if args.distillation_type is 'none'
-    criterion = DistillationLoss(criterion, teacher_model, args.distillation_type, 
-                                 args.distillation_alpha, args.distillation_tau)
-
-    output_dir = Path(args.output_dir)
+    
+    #----- ↑↑↑↑↑ 5. Initialize lr scheduler, loss, grad scaler and optimizer ↑↑↑↑↑ ------###########
+    ################################################################################################
+    
+    ################################################################################################
+    #----- ↓↓↓↓↓ 6. Resume from checkpoint ↓↓↓↓↓ ------#############################################
+    
     if args.resume:
+        # First load weights from the specified path
         if args.resume.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(
                 args.resume, map_location='cpu', check_hash=True)
         else:
             checkpoint = torch.load(args.resume, map_location='cpu', weights_only=False)
         
-        model_without_ddp.load_state_dict(checkpoint['model'])
+        # Second load the model state dict
+        if args.distributed:
+            model.module.load_state_dict(checkpoint['model'])
+        else:
+            model.load_state_dict(checkpoint['model'])
+        
+        # Load optimizer, lr_scheduler, epoch, model_ema, and loss scaler if available
         if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
             optimizer.load_state_dict(checkpoint['optimizer'])
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
@@ -518,34 +518,16 @@ def main(args):
             if 'scaler' in checkpoint:
                 loss_scaler.load_state_dict(checkpoint['scaler'])
         lr_scheduler.step(args.start_epoch*len(data_loader_train))
-
-    if args.eval:
-        if args.reparam:
-            print("Reparametering the backbone ...")
-            model_without_ddp.eval()
-            model_without_ddp.reparam()
-            model_without_ddp.to(args.device)
-            print("...")
-            if args.distributed:
-                model = torch.nn.parallel.DistributedDataParallel(model_without_ddp, device_ids=[args.device])
-            else:
-                model = model_without_ddp
-            print("Reparameterization done!")
         
-        get_macs(model)
-        test_stats = evaluate(data_loader_val, model, args.device, args)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
-        if args.distributed:
-            torch.distributed.destroy_process_group()
-        return
         
-    get_macs(model)
-    print(f"Start training for {args.epochs} epochs")
-    start_time = time.time()
-    max_accuracy = 0.0
+    #----- ↑↑↑↑↑ 6. Resume from checkpoint ↑↑↑↑↑ ------#############################################
+    ################################################################################################
+    
+    ################################################################################################
+    #----- ↓↓↓↓↓ 7. Set up pre-training configs ↓↓↓↓↓ ------########################################
     
     if args.global_rank == 0 and args.wandb:
-        project_name = f'{args.model}_{args.wandb_suffix}' if args.wandb_suffix is not None else f'{args.model}'
+        project_name = f'{args.model}_{args.wandb_suffix}' if args.wandb_suffix else f'{args.model}'
         trial_name = f'{args.model}_{random.randint(0, 10000):04d}_{datetime.date.today()}'
         wandb.init(
             # set the wandb project where this run will be logged
@@ -571,11 +553,19 @@ def main(args):
             }, 
             mode=os.environ['WANDB_MODE']
         )
-        # If called by wandb.agent, as below,
-        # this config will be set by Sweep Controller
-        config = wandb.config
     
+    max_accuracy = 0.0
     use_amp=True
+    
+    #----- ↑↑↑↑↑ 7. Set up pre-training configs ↑↑↑↑↑ ------########################################
+    ################################################################################################
+
+    ################################################################################################
+    #----- ↓↓↓↓↓ 8. Model training ↓↓↓↓↓ ------#####################################################
+    
+    print(f"Start training for {args.epochs} epochs")
+    
+    start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
@@ -584,7 +574,7 @@ def main(args):
             model, criterion, data_loader_train,
             optimizer, args.device, epoch, loss_scaler,
             args.clip_grad, model_ema, mixup_fn,
-            set_training_mode=args.train_mode,  # keep in eval mode for deit finetuning / train mode for training and deit III finetuning
+            set_training_mode=args.train_mode, 
             lr_scheduler = lr_scheduler,
             use_amp = use_amp, args = args,
         )
@@ -641,12 +631,17 @@ def main(args):
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                         **{f'test_{k}': v for k, v in test_stats.items()},
-                        'epoch': epoch,
-                        'n_parameters': n_parameters}
+                        'epoch': epoch}
             
         if args.output_dir and args.global_rank == 0:
             with (output_dir / "log.txt").open("a") as f:
                 f.write(json.dumps(log_stats) + "\n")
+                
+    #----- ↑↑↑↑↑ 8. Model training ↑↑↑↑↑ ------#####################################################
+    ################################################################################################
+    
+    ################################################################################################
+    #----- ↓↓↓↓↓ 9. Post-training processes ↓↓↓↓↓ ------############################################
     
     if args.global_rank == 0 and args.wandb:
         wandb.finish()
@@ -655,8 +650,12 @@ def main(args):
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
     
-    torch.distributed.destroy_process_group()
-
+    if args.distributed:
+        # Destroy the process group if using distributed training
+        torch.distributed.destroy_process_group()
+    
+    #----- ↑↑↑↑↑ 9. Post-training processes ↑↑↑↑↑ ------############################################
+    ################################################################################################
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('DeiT training and evaluation script', parents=[get_args_parser()])
